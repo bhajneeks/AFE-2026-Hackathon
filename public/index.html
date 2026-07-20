@@ -10,7 +10,7 @@
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
 <style>
   :root {
@@ -533,16 +533,21 @@ function linkedinNote(person){
 }
 
 /* ============================================================================
-   MESSAGING ENGINE — 1:1 DMs + group chats, backed by Socket.io
+   SUPABASE CLIENT + MESSAGING ENGINE
    ============================================================================
-   Conversations live in CONVOS keyed by "dm:<peerId>" or "grp:<groupId>".
-   Messages are sent/received via Socket.io for real-time multi-user chat.
+   Real-time messaging via Supabase Realtime subscriptions on the messages table.
+   No custom server needed — the frontend talks directly to Supabase.
    ========================================================================== */
-const socket = io();
+const SUPABASE_URL = 'https://lftvfvwazgqqldqhlhsr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmdHZmdndhemdxcWxkcWhsaHNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1ODEzNjgsImV4cCI6MjEwMDE1NzM2OH0.RA-i-yMVailDEdBiq0Eis4ThadYIawMsChQqffYirz8';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 function now(){ return Date.now(); }
 function dmKey(peerId){ return "dm:"+peerId; }
 function grpKey(groupId){ return "grp:"+groupId; }
+
+// Consistent DM convo key (sorted so both sides match)
+function dmConvoKey(a, b){ return "dm:" + [a,b].sort().join(":"); }
 
 function getConvo(key){ return CONVOS[key]; }
 function ensureDM(peerId){
@@ -558,7 +563,7 @@ function ensureGroup(groupId){
 function convMembers(c){
   if(c.type==="dm") return [ME, byId(c.peerId)].filter(Boolean);
   const g=GROUPS.find(x=>x.id===c.groupId); if(!g) return [ME].filter(Boolean);
-  return g.members.map(byId).filter(Boolean);
+  return g.members.map(m => byId(typeof m === 'object' ? m.user_id : m)).filter(Boolean);
 }
 function lastMessage(c){ return c.messages[c.messages.length-1]; }
 function totalUnread(){ return Object.values(CONVOS).reduce((n,c)=>n+(c.unread||0),0); }
@@ -571,51 +576,53 @@ function pushMessage(key, fromId, text, ts){
   refreshMessagingUI();
 }
 
-function sendMessage(key, text){
+async function sendMessage(key, text){
   text=(text||"").trim(); if(!text) return;
   const c=CONVOS[key]; if(!c) return;
+  let convoKey;
   if(c.type==="dm"){
-    socket.emit('sendDM', { toId: c.peerId, text });
+    convoKey = dmConvoKey(ME.id, c.peerId);
   } else {
-    socket.emit('sendGroupMessage', { groupId: c.groupId, text });
+    convoKey = "grp:" + c.groupId;
   }
-  // Typing indicator
-  socket.emit('typing', { convoKey: key });
+  const ts = Date.now();
+  await db.from('messages').insert({ convo_key: convoKey, from_id: ME.id, text, ts });
 }
 
-// Receive messages from the server
-socket.on('newMessage', (msg) => {
-  if(!ME) return;
-  // Determine which local convo this belongs to
-  let localKey = msg.convoKey;
-  if(msg.convoKey.startsWith('dm:')){
-    // Server uses sorted key like dm:id1:id2, map to local dm:<peerId>
-    const parts = msg.convoKey.slice(3).split(':');
-    const peerId = parts.find(id => id !== ME.id) || parts[0];
-    localKey = dmKey(peerId);
-    ensureDM(peerId);
-  } else if(msg.convoKey.startsWith('grp:')){
-    const groupId = msg.convoKey.slice(4);
-    localKey = grpKey(groupId);
-    ensureGroup(groupId);
-  }
-  pushMessage(localKey, msg.from, msg.text, msg.ts);
-});
+// Supabase Realtime subscription for new messages
+function subscribeToMessages(){
+  db.channel('messages-realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+      if(!ME) return;
+      const msg = payload.new;
+      let localKey = msg.convo_key;
+      if(msg.convo_key.startsWith('dm:')){
+        const parts = msg.convo_key.slice(3).split(':');
+        const peerId = parts.find(id => id !== ME.id);
+        if(!peerId) return;
+        localKey = dmKey(peerId);
+        ensureDM(peerId);
+      } else if(msg.convo_key.startsWith('grp:')){
+        const groupId = msg.convo_key.slice(4);
+        localKey = grpKey(groupId);
+        ensureGroup(groupId);
+      }
+      pushMessage(localKey, msg.from_id, msg.text, msg.ts);
+    })
+    .subscribe();
+}
 
-let TYPING={ key:null, who:null };
-socket.on('userTyping', ({convoKey, userId}) => {
-  if(!ME || userId === ME.id) return;
-  const who = byId(userId);
-  // Map server convoKey to local key
-  let localKey = convoKey;
-  if(convoKey.startsWith('dm:')){
-    localKey = dmKey(userId);
-  }
-  showTyping(localKey, who);
-  clearTimeout(TYPING._timer);
-  TYPING._timer = setTimeout(()=> clearTyping(), 2000);
-});
+// Load message history for a conversation from Supabase
+async function loadMessages(convoKey){
+  const { data } = await db.from('messages')
+    .select('*')
+    .eq('convo_key', convoKey)
+    .order('ts', { ascending: true })
+    .limit(200);
+  return (data||[]).map(m => ({ from: m.from_id, text: m.text, ts: m.ts }));
+}
 
+let TYPING={ key:null, who:null, _timer:null };
 function showTyping(key, who){ TYPING={key, who, _timer:TYPING._timer}; if(OPEN_CHAT===key) renderChatBody(); }
 function clearTyping(){ const k=TYPING.key; TYPING={key:null,who:null,_timer:null}; if(k&&OPEN_CHAT===k) renderChatBody(); }
 
@@ -973,40 +980,36 @@ document.addEventListener("click", e=>{
   const cad=e.target.closest("[data-cad]");
   if(cad){ state.cadence=cad.dataset.cad; renderSpeed(); }
 });
-function joinGroup(gid){
+async function joinGroup(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g||!ME) return;
   if(!g.members.includes(ME.id)){
-    socket.emit('joinGroup', { groupId: gid }, (updated) => {
-      if(updated){ const idx=GROUPS.findIndex(x=>x.id===gid); if(idx>=0) GROUPS[idx]=updated; }
-      ensureGroup(gid); toast(`Joined "${g.title}" ✓`); renderGroups(); openGroupChat(gid);
-    });
-  } else openGroupChat(gid);
+    await db.from('group_members').insert({ group_id: gid, user_id: ME.id });
+    g.members.push(ME.id);
+    toast(`Joined "${g.title}" ✓`); renderGroups();
+  }
+  openGroupChat(gid);
 }
-function openGroupChat(gid){
+async function openGroupChat(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
   if(ME && !g.members.includes(ME.id)){
-    socket.emit('joinGroup', { groupId: gid }, (updated) => {
-      if(updated){ const idx=GROUPS.findIndex(x=>x.id===gid); if(idx>=0) GROUPS[idx]=updated; }
-    });
+    await db.from('group_members').insert({ group_id: gid, user_id: ME.id });
+    g.members.push(ME.id);
   }
   ensureGroup(gid);
-  // Load message history from server
-  socket.emit('getMessages', { convoKey: 'grp:'+gid }, (messages) => {
-    const c=CONVOS[grpKey(gid)]; if(c){ c.messages=messages.map(m=>({from:m.from, text:m.text, ts:m.ts})); }
-    openChat(grpKey(gid));
-  });
+  const convoKey = "grp:" + gid;
+  const c=CONVOS[grpKey(gid)];
+  c.messages = await loadMessages(convoKey);
+  openChat(grpKey(gid));
 }
 
 /* ---------- Start a 1:1 DM / open LinkedIn ---------- */
-window.startDM=function(peerId){
+window.startDM=async function(peerId){
   const p=byId(peerId); if(!p) return;
   const c=ensureDM(peerId);
-  // Load message history from server, then open chat
-  socket.emit('getMessages', { convoKey: 'dm:'+peerId }, (messages) => {
-    c.messages=messages.map(m=>({from:m.from, text:m.text, ts:m.ts}));
-    openChat(c.key);
-    if(!c.messages.length){ const input=$("#chat-input"); if(input){ input.value=coffeeMessage(p); input.focus(); input.select&&input.setSelectionRange(0,0); } }
-  });
+  const convoKey = dmConvoKey(ME.id, peerId);
+  c.messages = await loadMessages(convoKey);
+  openChat(c.key);
+  if(!c.messages.length){ const input=$("#chat-input"); if(input){ input.value=coffeeMessage(p); input.focus(); input.select&&input.setSelectionRange(0,0); } }
 };
 window.openLinkedIn=function(peerId){
   const p=byId(peerId); if(!p||!p.linkedin) return;
@@ -1046,13 +1049,18 @@ $("#new-group").addEventListener("click", ()=>{
     </div>
     <div class="m-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" onclick="createGroup()">Create & join</button></div>`);
 });
-window.createGroup=function(){
+window.createGroup=async function(){
   const title=$("#g-title").value.trim(); if(!title){ toast("Give it a title first"); return; }
-  socket.emit('createGroup', { emoji: $("#g-emoji").value||"☕", title, desc: $("#g-desc").value||"", city: $("#g-city").value }, (group) => {
-    if(group){ GROUPS.unshift(group); ensureGroup(group.id); }
+  const { data } = await db.from('groups').insert({
+    emoji: $("#g-emoji").value||"☕", title, description: $("#g-desc").value||"", city: $("#g-city").value, created_by: ME.id
+  }).select().single();
+  if(data){
+    await db.from('group_members').insert({ group_id: data.id, user_id: ME.id });
+    const group = { id: data.id, emoji: data.emoji, title: data.title, desc: data.description, city: data.city, members: [ME.id] };
+    GROUPS.unshift(group); ensureGroup(group.id);
     closeModal(); renderGroups(); toast(`Created "${title}" ✓`);
-    if(group) openGroupChat(group.id);
-  });
+    openGroupChat(group.id);
+  }
 };
 
 /* ============================================================================
@@ -1126,10 +1134,10 @@ window.onPhotoPick=function(ev){
 window.clearPhoto=function(){ PHOTO_DRAFT=null; const prev=$("#photo-prev"); if(prev){ const nm=$("#f-name")?.value||ME?.name||"You"; prev.style.backgroundImage="none"; prev.setAttribute("style", avatarStyle(nm)); prev.textContent=initials(nm); } };
 document.addEventListener("click", e=>{ const chip=e.target.closest("#f-interests .chip"); if(chip) chip.classList.toggle("on"); });
 
-window.saveProfile=function(isOnboarding){
+window.saveProfile=async function(isOnboarding){
   const name=$("#f-name").value.trim(); if(!name){ toast("Add your name to continue"); return; }
   ME={
-    id: ME?.id || "me",
+    ...ME,
     name, track:$("#f-track").value, city:$("#f-city").value, school:$("#f-school").value,
     org:$("#f-org").value, email:$("#f-email").value.trim(), linkedin:$("#f-linkedin").value.trim(),
     avail:$("#f-avail").value, newToo:$("#f-new").value==="yes",
@@ -1137,11 +1145,12 @@ window.saveProfile=function(isOnboarding){
     photo:PHOTO_DRAFT || ME?.photo || null,
     privacy: ME?.privacy || {...DEFAULT_PRIVACY}
   };
-  // Persist to server
-  socket.emit('saveProfile', ME, (resp) => {
-    if(resp && resp.user){ ME=resp.user; }
-    renderAll();
-  });
+  // Persist to Supabase
+  await db.from('users').update({
+    name: ME.name, track: ME.track, city: ME.city, school: ME.school, org: ME.org,
+    linkedin: ME.linkedin, avail: ME.avail, new_too: ME.newToo, interests: ME.interests,
+    bio: ME.bio||'', photo: ME.photo, privacy: ME.privacy, email: ME.email
+  }).eq('id', ME.id);
   closeModal(); renderAll();
   if(map){ const c=CITIES[ME.city]; if(c) map.setView([c.lat,c.lng],6); }
   toast(isOnboarding?`Welcome to Orbit, ${name.split(" ")[0]}! 🛰️`:"Profile saved ✓");
@@ -1174,63 +1183,70 @@ function initMap(){
   markerLayer=L.layerGroup().addTo(map);
   renderMap();
 }
-function doLogin(){
+async function doLogin(){
   const name=$("#lg-name").value.trim(), email=$("#lg-email").value.trim();
   const err=$("#lg-err");
   if(!name){ err.textContent="What should we call you?"; return; }
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ err.textContent="Enter a valid email so peers can reach you."; return; }
   err.textContent="";
 
-  // Authenticate with server
-  socket.emit('login', { name, email }, (resp) => {
-    ME = resp.user;
-    const isNew = !ME.school && !ME.org;
+  // Check if user exists by email
+  let { data: existingList } = await db.from('users').select('*').eq('email', email).limit(1);
+  const existing = existingList && existingList.length > 0 ? existingList[0] : null;
+  if(existing){
+    ME = { ...existing, newToo: existing.new_too, interests: existing.interests||[] };
+  } else {
+    // Create new user
+    const { data: created, error: createErr } = await db.from('users').insert({
+      name, email, track: 'SDE', city: 'Seattle, WA', school: '', org: '', linkedin: '',
+      avail: 'coffee', new_too: true, interests: [], bio: '', photo: null,
+      privacy: { onMap:true, city:true, office:true, school:true, interests:true, linkedin:true, email:true, availability:true }
+    }).select().single();
+    if(createErr){ console.error('Create user error:', createErr); err.textContent="Something went wrong, try again."; return; }
+    ME = { ...created, newToo: created.new_too, interests: created.interests||[] };
+  }
+  const isNew = !ME.school && !ME.org;
 
-    // Load all users from server
-    socket.emit('getUsers', null, (users) => {
-      PEOPLE = users.filter(u => u.id !== ME.id);
+  // Load all users
+  const { data: users } = await db.from('users').select('*');
+  PEOPLE = (users||[]).filter(u => u.id !== ME.id).map(u => ({ ...u, newToo: u.new_too, interests: u.interests||[] }));
 
-      // Load groups from server
-      socket.emit('getGroups', null, (groups) => {
-        GROUPS = groups;
+  // Load groups + members
+  const { data: groups } = await db.from('groups').select('*, group_members(user_id)');
+  GROUPS = (groups||[]).map(g => ({
+    id: g.id, emoji: g.emoji, title: g.title, desc: g.description, city: g.city,
+    members: (g.group_members||[]).map(m => m.user_id)
+  }));
 
-        $("#login").classList.add("hidden");
-        $("#app").classList.remove("hidden");
-        if(!map) initMap(); else setTimeout(()=>map.invalidateSize(),60);
-        buildFilterChips();
-        renderAll();
-        PHOTO_DRAFT=null;
+  $("#login").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+  if(!map) initMap(); else setTimeout(()=>map.invalidateSize(),60);
+  buildFilterChips();
+  renderAll();
+  PHOTO_DRAFT=null;
 
-        if(isNew){
-          showModal(profileFormHTML("Welcome to Orbit 🛰️", ME, true));
-        }
-      });
-    });
-  });
+  // Subscribe to real-time messages
+  subscribeToMessages();
+
+  // Subscribe to user changes
+  db.channel('users-realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+      if(!ME) return;
+      const user = { ...payload.new, newToo: payload.new.new_too, interests: payload.new.interests||[] };
+      if(user.id === ME.id){ ME = user; updateMeChip(); return; }
+      const idx = PEOPLE.findIndex(p => p.id === user.id);
+      if(idx >= 0) PEOPLE[idx] = user; else PEOPLE.push(user);
+      renderCards(); renderMap();
+    })
+    .subscribe();
+
+  if(isNew){
+    showModal(profileFormHTML("Welcome to Orbit 🛰️", ME, true));
+  }
 }
 $("#lg-go").addEventListener("click", doLogin);
 $("#lg-email").addEventListener("keydown", e=>{ if(e.key==="Enter") doLogin(); });
 $("#lg-name").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#lg-email").focus(); });
-
-// Listen for new users joining or updating profiles
-socket.on('userUpdated', (user) => {
-  if(!ME) return;
-  if(user.id === ME.id){ ME = user; updateMeChip(); return; }
-  const idx = PEOPLE.findIndex(p => p.id === user.id);
-  if(idx >= 0) PEOPLE[idx] = user; else PEOPLE.push(user);
-  renderCards(); renderMap();
-});
-
-// Listen for new groups
-socket.on('groupCreated', (group) => {
-  if(!GROUPS.find(g=>g.id===group.id)) GROUPS.push(group);
-  renderGroups();
-});
-socket.on('groupUpdated', (group) => {
-  const idx=GROUPS.findIndex(g=>g.id===group.id);
-  if(idx>=0) GROUPS[idx]=group; else GROUPS.push(group);
-  renderGroups();
-});
 
 function boot(){
   buildFilterChips();
