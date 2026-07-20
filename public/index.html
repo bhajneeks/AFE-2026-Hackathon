@@ -540,7 +540,7 @@ function linkedinNote(person){
    ========================================================================== */
 const SUPABASE_URL = 'https://lftvfvwazgqqldqhlhsr.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmdHZmdndhemdxcWxkcWhsaHNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1ODEzNjgsImV4cCI6MjEwMDE1NzM2OH0.RA-i-yMVailDEdBiq0Eis4ThadYIawMsChQqffYirz8';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 function now(){ return Date.now(); }
 function dmKey(peerId){ return "dm:"+peerId; }
@@ -586,12 +586,12 @@ async function sendMessage(key, text){
     convoKey = "grp:" + c.groupId;
   }
   const ts = Date.now();
-  await supabase.from('messages').insert({ convo_key: convoKey, from_id: ME.id, text, ts });
+  await db.from('messages').insert({ convo_key: convoKey, from_id: ME.id, text, ts });
 }
 
 // Supabase Realtime subscription for new messages
 function subscribeToMessages(){
-  supabase.channel('messages-realtime')
+  db.channel('messages-realtime')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
       if(!ME) return;
       const msg = payload.new;
@@ -614,7 +614,7 @@ function subscribeToMessages(){
 
 // Load message history for a conversation from Supabase
 async function loadMessages(convoKey){
-  const { data } = await supabase.from('messages')
+  const { data } = await db.from('messages')
     .select('*')
     .eq('convo_key', convoKey)
     .order('ts', { ascending: true })
@@ -983,7 +983,7 @@ document.addEventListener("click", e=>{
 async function joinGroup(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g||!ME) return;
   if(!g.members.includes(ME.id)){
-    await supabase.from('group_members').insert({ group_id: gid, user_id: ME.id });
+    await db.from('group_members').insert({ group_id: gid, user_id: ME.id });
     g.members.push(ME.id);
     toast(`Joined "${g.title}" ✓`); renderGroups();
   }
@@ -992,7 +992,7 @@ async function joinGroup(gid){
 async function openGroupChat(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
   if(ME && !g.members.includes(ME.id)){
-    await supabase.from('group_members').insert({ group_id: gid, user_id: ME.id });
+    await db.from('group_members').insert({ group_id: gid, user_id: ME.id });
     g.members.push(ME.id);
   }
   ensureGroup(gid);
@@ -1051,11 +1051,11 @@ $("#new-group").addEventListener("click", ()=>{
 });
 window.createGroup=async function(){
   const title=$("#g-title").value.trim(); if(!title){ toast("Give it a title first"); return; }
-  const { data } = await supabase.from('groups').insert({
+  const { data } = await db.from('groups').insert({
     emoji: $("#g-emoji").value||"☕", title, description: $("#g-desc").value||"", city: $("#g-city").value, created_by: ME.id
   }).select().single();
   if(data){
-    await supabase.from('group_members').insert({ group_id: data.id, user_id: ME.id });
+    await db.from('group_members').insert({ group_id: data.id, user_id: ME.id });
     const group = { id: data.id, emoji: data.emoji, title: data.title, desc: data.description, city: data.city, members: [ME.id] };
     GROUPS.unshift(group); ensureGroup(group.id);
     closeModal(); renderGroups(); toast(`Created "${title}" ✓`);
@@ -1146,7 +1146,7 @@ window.saveProfile=async function(isOnboarding){
     privacy: ME?.privacy || {...DEFAULT_PRIVACY}
   };
   // Persist to Supabase
-  await supabase.from('users').update({
+  await db.from('users').update({
     name: ME.name, track: ME.track, city: ME.city, school: ME.school, org: ME.org,
     linkedin: ME.linkedin, avail: ME.avail, new_too: ME.newToo, interests: ME.interests,
     bio: ME.bio||'', photo: ME.photo, privacy: ME.privacy, email: ME.email
@@ -1191,26 +1191,28 @@ async function doLogin(){
   err.textContent="";
 
   // Check if user exists by email
-  let { data: existing } = await supabase.from('users').select('*').eq('email', email).limit(1).single();
+  let { data: existingList } = await db.from('users').select('*').eq('email', email).limit(1);
+  const existing = existingList && existingList.length > 0 ? existingList[0] : null;
   if(existing){
     ME = { ...existing, newToo: existing.new_too, interests: existing.interests||[] };
   } else {
     // Create new user
-    const { data: created } = await supabase.from('users').insert({
+    const { data: created, error: createErr } = await db.from('users').insert({
       name, email, track: 'SDE', city: 'Seattle, WA', school: '', org: '', linkedin: '',
       avail: 'coffee', new_too: true, interests: [], bio: '', photo: null,
       privacy: { onMap:true, city:true, office:true, school:true, interests:true, linkedin:true, email:true, availability:true }
     }).select().single();
+    if(createErr){ console.error('Create user error:', createErr); err.textContent="Something went wrong, try again."; return; }
     ME = { ...created, newToo: created.new_too, interests: created.interests||[] };
   }
   const isNew = !ME.school && !ME.org;
 
   // Load all users
-  const { data: users } = await supabase.from('users').select('*');
+  const { data: users } = await db.from('users').select('*');
   PEOPLE = (users||[]).filter(u => u.id !== ME.id).map(u => ({ ...u, newToo: u.new_too, interests: u.interests||[] }));
 
   // Load groups + members
-  const { data: groups } = await supabase.from('groups').select('*, group_members(user_id)');
+  const { data: groups } = await db.from('groups').select('*, group_members(user_id)');
   GROUPS = (groups||[]).map(g => ({
     id: g.id, emoji: g.emoji, title: g.title, desc: g.description, city: g.city,
     members: (g.group_members||[]).map(m => m.user_id)
@@ -1227,7 +1229,7 @@ async function doLogin(){
   subscribeToMessages();
 
   // Subscribe to user changes
-  supabase.channel('users-realtime')
+  db.channel('users-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
       if(!ME) return;
       const user = { ...payload.new, newToo: payload.new.new_too, interests: payload.new.interests||[] };
