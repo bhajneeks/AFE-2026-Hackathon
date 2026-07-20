@@ -1,152 +1,110 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const Database = require('better-sqlite3');
-const path = require('path');
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const crypto = require('crypto');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: { origin: '*' },
+  pingTimeout: 60000,
+  pingInterval: 25000,
+});
 
 const PORT = process.env.PORT || 3000;
 
-// --- Database setup ---
-const db = new Database(path.join(__dirname, 'orbit.db'));
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// --- DynamoDB setup ---
+const ddbClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-west-2' });
+const ddb = DynamoDBDocumentClient.from(ddbClient, {
+  marshallOptions: { removeUndefinedValues: true },
+});
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    track TEXT DEFAULT 'SDE',
-    city TEXT DEFAULT 'Seattle, WA',
-    school TEXT DEFAULT '',
-    org TEXT DEFAULT '',
-    linkedin TEXT DEFAULT '',
-    avail TEXT DEFAULT 'coffee',
-    new_too INTEGER DEFAULT 1,
-    interests TEXT DEFAULT '[]',
-    bio TEXT DEFAULT '',
-    photo TEXT DEFAULT NULL,
-    privacy TEXT DEFAULT '{}',
-    created_at INTEGER DEFAULT (unixepoch())
-  );
+const USERS_TABLE = 'orbit_users';
+const MESSAGES_TABLE = 'orbit_messages';
+const GROUPS_TABLE = 'orbit_groups';
 
-  CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    convo_key TEXT NOT NULL,
-    from_id TEXT NOT NULL,
-    text TEXT NOT NULL,
-    ts INTEGER NOT NULL,
-    FOREIGN KEY (from_id) REFERENCES users(id)
-  );
+// --- DB helpers ---
+async function getUserByEmail(email) {
+  const resp = await ddb.send(new QueryCommand({
+    TableName: USERS_TABLE,
+    IndexName: 'email-index',
+    KeyConditionExpression: 'email = :e',
+    ExpressionAttributeValues: { ':e': email },
+    Limit: 1,
+  }));
+  return resp.Items?.[0] || null;
+}
 
-  CREATE INDEX IF NOT EXISTS idx_messages_convo ON messages(convo_key, ts);
+async function getUserById(id) {
+  const resp = await ddb.send(new GetCommand({ TableName: USERS_TABLE, Key: { id } }));
+  return resp.Item || null;
+}
 
-  CREATE TABLE IF NOT EXISTS groups (
-    id TEXT PRIMARY KEY,
-    emoji TEXT DEFAULT '',
-    title TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    city TEXT DEFAULT '',
-    created_by TEXT,
-    created_at INTEGER DEFAULT (unixepoch())
-  );
+async function getAllUsers() {
+  const resp = await ddb.send(new ScanCommand({ TableName: USERS_TABLE }));
+  return resp.Items || [];
+}
 
-  CREATE TABLE IF NOT EXISTS group_members (
-    group_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    joined_at INTEGER DEFAULT (unixepoch()),
-    PRIMARY KEY (group_id, user_id),
-    FOREIGN KEY (group_id) REFERENCES groups(id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  );
-`);
+async function putUser(user) {
+  await ddb.send(new PutCommand({ TableName: USERS_TABLE, Item: user }));
+}
 
-// --- Prepared statements ---
-const stmts = {
-  upsertUser: db.prepare(`
-    INSERT INTO users (id, name, email, track, city, school, org, linkedin, avail, new_too, interests, bio, photo, privacy)
-    VALUES (@id, @name, @email, @track, @city, @school, @org, @linkedin, @avail, @new_too, @interests, @bio, @photo, @privacy)
-    ON CONFLICT(id) DO UPDATE SET
-      name=@name, email=@email, track=@track, city=@city, school=@school, org=@org,
-      linkedin=@linkedin, avail=@avail, new_too=@new_too, interests=@interests, bio=@bio, photo=@photo, privacy=@privacy
-  `),
-  getUserByEmail: db.prepare('SELECT * FROM users WHERE email = ?'),
-  getUserById: db.prepare('SELECT * FROM users WHERE id = ?'),
-  getAllUsers: db.prepare('SELECT * FROM users'),
-  insertMessage: db.prepare('INSERT INTO messages (id, convo_key, from_id, text, ts) VALUES (?, ?, ?, ?, ?)'),
-  getMessages: db.prepare('SELECT * FROM messages WHERE convo_key = ? ORDER BY ts ASC'),
-  getRecentConvos: db.prepare(`
-    SELECT convo_key, MAX(ts) as last_ts FROM messages
-    WHERE convo_key LIKE ? OR convo_key IN (
-      SELECT 'dm:' || CASE WHEN from_id = ? THEN substr(convo_key, 4) ELSE from_id END
-      FROM messages WHERE from_id = ? OR convo_key LIKE ?
-    )
-    GROUP BY convo_key ORDER BY last_ts DESC
-  `),
-  createGroup: db.prepare('INSERT INTO groups (id, emoji, title, description, city, created_by) VALUES (?, ?, ?, ?, ?, ?)'),
-  getGroup: db.prepare('SELECT * FROM groups WHERE id = ?'),
-  getAllGroups: db.prepare('SELECT * FROM groups'),
-  addGroupMember: db.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)'),
-  removeGroupMember: db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?'),
-  getGroupMembers: db.prepare('SELECT user_id FROM group_members WHERE group_id = ?'),
-  getUserGroups: db.prepare('SELECT group_id FROM group_members WHERE user_id = ?'),
-};
+async function getMessages(convoKey, limit = 100) {
+  const resp = await ddb.send(new QueryCommand({
+    TableName: MESSAGES_TABLE,
+    KeyConditionExpression: 'convo_key = :ck',
+    ExpressionAttributeValues: { ':ck': convoKey },
+    ScanIndexForward: true,
+    Limit: limit,
+  }));
+  return resp.Items || [];
+}
 
-// --- Seed default groups if empty ---
-const groupCount = db.prepare('SELECT COUNT(*) as c FROM groups').get();
-if (groupCount.c === 0) {
-  const seedGroups = [
-    { id: 'g1', emoji: '\u{1F371}', title: 'Seattle AFEs lunch', desc: 'Grab lunch downtown, Thursdays.', city: 'Seattle, WA' },
-    { id: 'g2', emoji: '\u{1F3A4}', title: 'HDE interns Q&A', desc: 'HDE-only space to swap portfolio + critique tips.', city: '' },
-    { id: 'g3', emoji: '\u{1F4CA}', title: 'First demo prep', desc: 'Practice your first sprint demo, get gentle feedback.', city: '' },
-    { id: 'g4', emoji: '\u{1F9CD}', title: 'First-standup brown bag (PT)', desc: 'Pacific-time first-timers: what even is a standup?', city: '' },
+async function putMessage(msg) {
+  await ddb.send(new PutCommand({ TableName: MESSAGES_TABLE, Item: msg }));
+}
+
+async function getGroup(id) {
+  const resp = await ddb.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));
+  return resp.Item || null;
+}
+
+async function getAllGroups() {
+  const resp = await ddb.send(new ScanCommand({ TableName: GROUPS_TABLE }));
+  return resp.Items || [];
+}
+
+async function putGroup(group) {
+  await ddb.send(new PutCommand({ TableName: GROUPS_TABLE, Item: group }));
+}
+
+// --- Seed default groups if needed ---
+async function seedGroups() {
+  const existing = await getAllGroups();
+  if (existing.length > 0) return;
+
+  const defaults = [
+    { id: 'g1', emoji: '\u{1F371}', title: 'Seattle AFEs lunch', desc: 'Grab lunch downtown, Thursdays.', city: 'Seattle, WA', members: [] },
+    { id: 'g2', emoji: '\u{1F3A4}', title: 'HDE interns Q&A', desc: 'HDE-only space to swap portfolio + critique tips.', city: '', members: [] },
+    { id: 'g3', emoji: '\u{1F4CA}', title: 'First demo prep', desc: 'Practice your first sprint demo, get gentle feedback.', city: '', members: [] },
+    { id: 'g4', emoji: '\u{1F9CD}', title: 'First-standup brown bag (PT)', desc: 'Pacific-time first-timers: what even is a standup?', city: '', members: [] },
   ];
-  for (const g of seedGroups) {
-    stmts.createGroup.run(g.id, g.emoji, g.title, g.desc, g.city, null);
+  for (const g of defaults) {
+    await putGroup(g);
   }
+  console.log('Seeded default groups.');
 }
 
-// --- Helper to serialize user for client ---
-function serializeUser(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    track: row.track,
-    city: row.city,
-    school: row.school,
-    org: row.org,
-    linkedin: row.linkedin,
-    avail: row.avail,
-    newToo: !!row.new_too,
-    interests: JSON.parse(row.interests || '[]'),
-    bio: row.bio,
-    photo: row.photo,
-    privacy: JSON.parse(row.privacy || '{}'),
-  };
-}
-
-function serializeGroup(row) {
-  if (!row) return null;
-  const members = stmts.getGroupMembers.all(row.id).map(r => r.user_id);
-  return {
-    id: row.id,
-    emoji: row.emoji,
-    title: row.title,
-    desc: row.description,
-    city: row.city,
-    members,
-  };
+// --- Consistent DM convo key ---
+function dmConvoKey(a, b) {
+  return 'dm:' + [a, b].sort().join(':');
 }
 
 // --- Serve static files ---
-app.use(express.static(__dirname + '/public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Socket.io ---
 const onlineUsers = new Map(); // socketId -> userId
@@ -155,173 +113,188 @@ const userSockets = new Map(); // userId -> Set<socketId>
 io.on('connection', (socket) => {
   let currentUserId = null;
 
-  // --- Auth / Login ---
-  socket.on('login', ({ name, email }, ack) => {
-    let user = stmts.getUserByEmail.get(email);
-    if (user) {
-      currentUserId = user.id;
-    } else {
-      const id = 'u_' + crypto.randomBytes(8).toString('hex');
-      stmts.upsertUser.run({
-        id, name, email, track: 'SDE', city: 'Seattle, WA', school: '', org: '',
-        linkedin: '', avail: 'coffee', new_too: 1, interests: '[]', bio: '', photo: null,
-        privacy: JSON.stringify({ onMap: true, city: true, office: true, school: true, interests: true, linkedin: true, email: true, availability: true }),
-      });
-      user = stmts.getUserById.get(id);
-      currentUserId = id;
-    }
-
-    onlineUsers.set(socket.id, currentUserId);
-    if (!userSockets.has(currentUserId)) userSockets.set(currentUserId, new Set());
-    userSockets.get(currentUserId).add(socket.id);
-
-    // Join rooms for all groups user is in
-    const userGroupRows = stmts.getUserGroups.all(currentUserId);
-    for (const r of userGroupRows) {
-      socket.join('grp:' + r.group_id);
-    }
-
-    ack({ user: serializeUser(user) });
-  });
-
-  // --- Save/update profile ---
-  socket.on('saveProfile', (data, ack) => {
-    if (!currentUserId) return;
-    stmts.upsertUser.run({
-      id: currentUserId,
-      name: data.name,
-      email: data.email,
-      track: data.track,
-      city: data.city,
-      school: data.school || '',
-      org: data.org || '',
-      linkedin: data.linkedin || '',
-      avail: data.avail,
-      new_too: data.newToo ? 1 : 0,
-      interests: JSON.stringify(data.interests || []),
-      bio: data.bio || '',
-      photo: data.photo || null,
-      privacy: JSON.stringify(data.privacy || {}),
-    });
-    const updated = serializeUser(stmts.getUserById.get(currentUserId));
-    io.emit('userUpdated', updated);
-    if (ack) ack({ user: updated });
-  });
-
-  // --- Get all users (for the directory) ---
-  socket.on('getUsers', (_, ack) => {
-    const users = stmts.getAllUsers.all().map(serializeUser);
-    ack(users);
-  });
-
-  // --- Get all groups ---
-  socket.on('getGroups', (_, ack) => {
-    const groups = stmts.getAllGroups.all().map(serializeGroup);
-    ack(groups);
-  });
-
-  // --- Send a DM ---
-  socket.on('sendDM', ({ toId, text }) => {
-    if (!currentUserId || !text?.trim()) return;
-    const msgId = 'm_' + crypto.randomBytes(8).toString('hex');
-    const ts = Date.now();
-    const convoKey = dmConvoKey(currentUserId, toId);
-    stmts.insertMessage.run(msgId, convoKey, currentUserId, text.trim(), ts);
-
-    const msg = { id: msgId, convoKey, from: currentUserId, text: text.trim(), ts };
-
-    // Send to recipient
-    const recipientSockets = userSockets.get(toId);
-    if (recipientSockets) {
-      for (const sid of recipientSockets) {
-        io.to(sid).emit('newMessage', msg);
+  socket.on('login', async ({ name, email }, ack) => {
+    try {
+      let user = await getUserByEmail(email);
+      if (user) {
+        currentUserId = user.id;
+      } else {
+        const id = 'u_' + crypto.randomBytes(8).toString('hex');
+        user = {
+          id, name, email, track: 'SDE', city: 'Seattle, WA', school: '', org: '',
+          linkedin: '', avail: 'coffee', newToo: true, interests: [], bio: '', photo: null,
+          privacy: { onMap: true, city: true, office: true, school: true, interests: true, linkedin: true, email: true, availability: true },
+          createdAt: Date.now(),
+        };
+        await putUser(user);
+        currentUserId = id;
+        io.emit('userUpdated', user);
       }
-    }
-    // Echo back to sender (all their tabs)
-    const senderSockets = userSockets.get(currentUserId);
-    if (senderSockets) {
-      for (const sid of senderSockets) {
-        io.to(sid).emit('newMessage', msg);
+
+      onlineUsers.set(socket.id, currentUserId);
+      if (!userSockets.has(currentUserId)) userSockets.set(currentUserId, new Set());
+      userSockets.get(currentUserId).add(socket.id);
+
+      // Join group rooms
+      const groups = await getAllGroups();
+      for (const g of groups) {
+        if (g.members && g.members.includes(currentUserId)) {
+          socket.join('grp:' + g.id);
+        }
       }
+
+      ack({ user });
+    } catch (e) {
+      console.error('Login error:', e);
+      ack({ error: 'Login failed' });
     }
   });
 
-  // --- Send a group message ---
-  socket.on('sendGroupMessage', ({ groupId, text }) => {
-    if (!currentUserId || !text?.trim()) return;
-    const msgId = 'm_' + crypto.randomBytes(8).toString('hex');
-    const ts = Date.now();
-    const convoKey = 'grp:' + groupId;
-    stmts.insertMessage.run(msgId, convoKey, currentUserId, text.trim(), ts);
-
-    const msg = { id: msgId, convoKey, from: currentUserId, text: text.trim(), ts };
-    io.to(convoKey).emit('newMessage', msg);
-  });
-
-  // --- Get message history for a convo ---
-  socket.on('getMessages', ({ convoKey }, ack) => {
+  socket.on('saveProfile', async (data, ack) => {
     if (!currentUserId) return;
-    // For DMs, normalize the key
-    let key = convoKey;
-    if (convoKey.startsWith('dm:')) {
-      const peerId = convoKey.slice(3);
-      key = dmConvoKey(currentUserId, peerId);
+    try {
+      const user = {
+        id: currentUserId,
+        name: data.name,
+        email: data.email,
+        track: data.track,
+        city: data.city,
+        school: data.school || '',
+        org: data.org || '',
+        linkedin: data.linkedin || '',
+        avail: data.avail,
+        newToo: !!data.newToo,
+        interests: data.interests || [],
+        bio: data.bio || '',
+        photo: data.photo || null,
+        privacy: data.privacy || {},
+      };
+      await putUser(user);
+      io.emit('userUpdated', user);
+      if (ack) ack({ user });
+    } catch (e) {
+      console.error('SaveProfile error:', e);
     }
-    const rows = stmts.getMessages.all(key);
-    const messages = rows.map(r => ({ id: r.id, convoKey: r.convo_key, from: r.from_id, text: r.text, ts: r.ts }));
-    ack(messages);
   });
 
-  // --- Get user's conversations list ---
-  socket.on('getConversations', (_, ack) => {
+  socket.on('getUsers', async (_, ack) => {
+    try {
+      const users = await getAllUsers();
+      ack(users);
+    } catch (e) {
+      console.error('GetUsers error:', e);
+      ack([]);
+    }
+  });
+
+  socket.on('getGroups', async (_, ack) => {
+    try {
+      const groups = await getAllGroups();
+      ack(groups);
+    } catch (e) {
+      console.error('GetGroups error:', e);
+      ack([]);
+    }
+  });
+
+  socket.on('sendDM', async ({ toId, text }) => {
+    if (!currentUserId || !text?.trim()) return;
+    try {
+      const ts = Date.now();
+      const convoKey = dmConvoKey(currentUserId, toId);
+      const msg = { convo_key: convoKey, ts, id: 'm_' + crypto.randomBytes(8).toString('hex'), from: currentUserId, text: text.trim() };
+      await putMessage(msg);
+
+      const outMsg = { id: msg.id, convoKey, from: currentUserId, text: text.trim(), ts };
+
+      // Send to recipient
+      const recipientSockets = userSockets.get(toId);
+      if (recipientSockets) {
+        for (const sid of recipientSockets) io.to(sid).emit('newMessage', outMsg);
+      }
+      // Echo to sender
+      const senderSockets = userSockets.get(currentUserId);
+      if (senderSockets) {
+        for (const sid of senderSockets) io.to(sid).emit('newMessage', outMsg);
+      }
+    } catch (e) {
+      console.error('SendDM error:', e);
+    }
+  });
+
+  socket.on('sendGroupMessage', async ({ groupId, text }) => {
+    if (!currentUserId || !text?.trim()) return;
+    try {
+      const ts = Date.now();
+      const convoKey = 'grp:' + groupId;
+      const msg = { convo_key: convoKey, ts, id: 'm_' + crypto.randomBytes(8).toString('hex'), from: currentUserId, text: text.trim() };
+      await putMessage(msg);
+
+      const outMsg = { id: msg.id, convoKey, from: currentUserId, text: text.trim(), ts };
+      io.to(convoKey).emit('newMessage', outMsg);
+    } catch (e) {
+      console.error('SendGroupMessage error:', e);
+    }
+  });
+
+  socket.on('getMessages', async ({ convoKey }, ack) => {
     if (!currentUserId) return ack([]);
-
-    // Find all DM convo keys involving this user
-    const allMsgs = db.prepare(`
-      SELECT DISTINCT convo_key FROM messages
-      WHERE (convo_key LIKE 'dm:%' AND (from_id = ? OR convo_key LIKE ?))
-         OR convo_key IN (SELECT 'grp:' || group_id FROM group_members WHERE user_id = ?)
-    `).all(currentUserId, `%${currentUserId}%`, currentUserId);
-
-    const convos = [];
-    for (const { convo_key } of allMsgs) {
-      // For DMs, check this user is actually part of the convo
-      if (convo_key.startsWith('dm:')) {
-        const parts = convo_key.slice(3).split(':');
-        if (!parts.includes(currentUserId)) continue;
+    try {
+      let key = convoKey;
+      if (convoKey.startsWith('dm:') && !convoKey.includes(':' + currentUserId)) {
+        const peerId = convoKey.slice(3);
+        key = dmConvoKey(currentUserId, peerId);
+      } else if (convoKey.startsWith('dm:') && convoKey.split(':').length === 2) {
+        const peerId = convoKey.slice(3);
+        key = dmConvoKey(currentUserId, peerId);
       }
-      const lastMsg = db.prepare('SELECT * FROM messages WHERE convo_key = ? ORDER BY ts DESC LIMIT 1').get(convo_key);
-      if (lastMsg) {
-        convos.push({ convoKey: convo_key, lastMessage: { from: lastMsg.from_id, text: lastMsg.text, ts: lastMsg.ts } });
-      }
+      const rows = await getMessages(key);
+      const messages = rows.map(r => ({ id: r.id, convoKey: r.convo_key, from: r.from, text: r.text, ts: r.ts }));
+      ack(messages);
+    } catch (e) {
+      console.error('GetMessages error:', e);
+      ack([]);
     }
-    convos.sort((a, b) => b.lastMessage.ts - a.lastMessage.ts);
-    ack(convos);
   });
 
-  // --- Join a group ---
-  socket.on('joinGroup', ({ groupId }, ack) => {
+  socket.on('getConversations', async (_, ack) => {
+    if (!currentUserId) return ack([]);
+    // For now, client tracks conversations locally; server provides message history on demand
+    ack([]);
+  });
+
+  socket.on('joinGroup', async ({ groupId }, ack) => {
     if (!currentUserId) return;
-    stmts.addGroupMember.run(groupId, currentUserId);
-    socket.join('grp:' + groupId);
-    const group = serializeGroup(stmts.getGroup.get(groupId));
-    io.emit('groupUpdated', group);
-    if (ack) ack(group);
+    try {
+      const group = await getGroup(groupId);
+      if (!group) return ack(null);
+      if (!group.members) group.members = [];
+      if (!group.members.includes(currentUserId)) {
+        group.members.push(currentUserId);
+        await putGroup(group);
+      }
+      socket.join('grp:' + groupId);
+      io.emit('groupUpdated', group);
+      if (ack) ack(group);
+    } catch (e) {
+      console.error('JoinGroup error:', e);
+    }
   });
 
-  // --- Create a group ---
-  socket.on('createGroup', ({ emoji, title, desc, city }, ack) => {
+  socket.on('createGroup', async ({ emoji, title, desc, city }, ack) => {
     if (!currentUserId) return;
-    const id = 'g_' + crypto.randomBytes(6).toString('hex');
-    stmts.createGroup.run(id, emoji || '', title, desc || '', city || '', currentUserId);
-    stmts.addGroupMember.run(id, currentUserId);
-    socket.join('grp:' + id);
-    const group = serializeGroup(stmts.getGroup.get(id));
-    io.emit('groupCreated', group);
-    if (ack) ack(group);
+    try {
+      const id = 'g_' + crypto.randomBytes(6).toString('hex');
+      const group = { id, emoji: emoji || '', title, desc: desc || '', city: city || '', members: [currentUserId], createdBy: currentUserId };
+      await putGroup(group);
+      socket.join('grp:' + id);
+      io.emit('groupCreated', group);
+      if (ack) ack(group);
+    } catch (e) {
+      console.error('CreateGroup error:', e);
+    }
   });
 
-  // --- Typing indicator ---
   socket.on('typing', ({ convoKey }) => {
     if (!currentUserId) return;
     if (convoKey.startsWith('grp:')) {
@@ -337,7 +310,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- Disconnect ---
   socket.on('disconnect', () => {
     onlineUsers.delete(socket.id);
     if (currentUserId && userSockets.has(currentUserId)) {
@@ -347,11 +319,12 @@ io.on('connection', (socket) => {
   });
 });
 
-// Consistent DM convo key: always sort the two IDs so both sides use the same key
-function dmConvoKey(a, b) {
-  return 'dm:' + [a, b].sort().join(':');
-}
-
-server.listen(PORT, () => {
-  console.log(`Orbit server running at http://localhost:${PORT}`);
+// --- Start ---
+seedGroups().then(() => {
+  server.listen(PORT, () => {
+    console.log(`Orbit server running at http://localhost:${PORT}`);
+  });
+}).catch(e => {
+  console.error('Failed to seed groups:', e);
+  process.exit(1);
 });
