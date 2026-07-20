@@ -1,0 +1,4 @@
+node_modules/
+orbit.db
+orbit.db-shm
+orbit.db-wal
