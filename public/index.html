@@ -12,6 +12,7 @@
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/globe.gl@2.30.0/dist/globe.gl.min.js"></script>
 
 <!-- Fonts: Outfit (display) + Plus Jakarta Sans (body) -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -131,6 +132,7 @@
     <section class="content">
       <div class="view active" id="view-map">
         <div id="map"></div>
+        <div id="globe-container"></div>
         <div class="map-toolbar">
           <div class="map-search">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
@@ -142,6 +144,7 @@
             <button class="locate-refresh" id="btn-locate-refresh" title="Update my saved location" aria-label="Update my saved location">⟳</button>
           </div>
           <button class="btn map-heat on" id="btn-heat" title="Toggle the AFE density heatmap" aria-pressed="true">🔥 Heatmap</button>
+          <button class="btn map-globe" id="btn-globe" title="Switch to 3D globe view" aria-pressed="false">🌍 Globe</button>
         </div>
         <div class="count-bar" id="count-bar-map"></div>
         <div class="map-legend">

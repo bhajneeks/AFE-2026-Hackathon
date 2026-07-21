@@ -514,7 +514,7 @@ function renderMap(){
   markerLayer.clearLayers();
   const list=visiblePeople();
   renderHeat(list);
-  $("#count-bar-map").innerHTML=`<b>${list.length}</b> ${list.length===1?"AFE":"AFEs"} on the map · pins are approximate`;
+  updateOnlineCount();
   if(ME && ME.privacy.onMap){
     const j=jitter(ME.city, ME.id+"me");
     if(j) L.marker([j.lat,j.lng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${esc(ME.city)}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile →</a>`);
@@ -537,6 +537,7 @@ function renderMap(){
         </div>
       </div>`);
   }
+  renderGlobe();
 }
 // Circular avatar map pin (profile photo if present, else initials on the track color).
 function facePin(p, color, me=false, alum=false){
@@ -546,9 +547,12 @@ function facePin(p, color, me=false, alum=false){
     ? `background-image:url('${safePhotoUrl(p.photo)}');background-size:cover;background-position:center`
     : `${avatarStyle(p.name)};display:grid;place-items:center;font-weight:800;font-size:${me?13:12}px;color:#10182b`;
   const label = p.photo ? "" : initials(p.name);
+  const isOnline = me || ONLINE_IDS.has(p.id);
+  const pulse = isOnline ? `<div class="presence-pulse"></div>` : "";
   return L.divIcon({
     className:"", iconSize:[size,size], iconAnchor:[size/2,size/2],
-    html:`<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${color};box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:visible;">
+    html:`<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${isOnline&&!me?"#46d6a4":color};box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:visible;">
+            ${pulse}
             <div style="width:100%;height:100%;border-radius:50%;overflow:hidden;${inner}">${label}</div>${badge}
           </div>`
   });
@@ -1038,6 +1042,186 @@ function openPrivacy(){
 document.addEventListener("click", e=>{ const sw=e.target.closest("[data-priv]"); if(sw&&ME){ const k=sw.dataset.priv; ME.privacy[k]=!ME.privacy[k]; sw.classList.toggle("on", ME.privacy[k]); } });
 
 /* ============================================================================
+   LIVE PRESENCE  — who's online right now via Supabase Realtime presence
+   ========================================================================== */
+const ONLINE_IDS = new Set();
+
+function subscribePresence(){
+  if(!ME) return;
+  const ch = db.channel("orbit-presence", { config:{ presence:{ key: ME.id } } });
+  ch.on("presence", { event:"sync" }, ()=>{
+    ONLINE_IDS.clear();
+    const state = ch.presenceState();
+    for(const key of Object.keys(state)) ONLINE_IDS.add(key);
+    renderMap();          // re-render map pins with/without pulse
+    renderGlobe();        // update globe rings
+    updateOnlineCount();
+  }).subscribe(async status=>{
+    if(status==="SUBSCRIBED") await ch.track({ id: ME.id });
+  });
+}
+
+function updateOnlineCount(){
+  const bar = document.getElementById("count-bar-map");
+  if(!bar) return;
+  const total = visiblePeople().length;
+  const online = visiblePeople().filter(p => ONLINE_IDS.has(p.id)).length;
+  const liveStr = online > 0
+    ? ` · <span style="color:var(--good)">● ${online} online now</span>`
+    : "";
+  bar.innerHTML = `<b>${total}</b> ${total===1?"AFE":"AFEs"} on the map · pins are approximate${liveStr}`;
+}
+
+/* ============================================================================
+   GLOBE MODE  — 3D spinning globe with city glows + connection arcs
+   ========================================================================== */
+let globeInstance = null;
+let globeOn = false;
+let pendingArc = null;   // { from, to } city coords set when user clicks a pin
+
+function initGlobe(){
+  const container = document.getElementById("globe-container");
+  if(globeInstance || !container) return;
+
+  const isDark = currentTheme() !== "light";
+  globeInstance = Globe()(container)
+    .globeImageUrl(isDark
+      ? "https://unpkg.com/three-globe/example/img/earth-night.jpg"
+      : "https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg")
+    .backgroundImageUrl("https://unpkg.com/three-globe/example/img/night-sky.png")
+    .width(container.clientWidth)
+    .height(container.clientHeight)
+    .pointOfView({ lat:39, lng:-95, altitude:1.8 }, 0)
+    .atmosphereColor(isDark ? "#1e3a8a" : "#4fa3e0")
+    .atmosphereAltitude(0.18);
+
+  // Resize with container
+  const ro = new ResizeObserver(()=>{
+    if(globeInstance){
+      globeInstance.width(container.clientWidth);
+      globeInstance.height(container.clientHeight);
+    }
+  });
+  ro.observe(container);
+
+  renderGlobe();
+}
+
+function renderGlobe(){
+  if(!globeInstance || !globeOn) return;
+  const list = visiblePeople();
+
+  // City aggregation: group people by city for ring altitude + label
+  const cityMap = {};
+  for(const p of list){
+    const c = CITIES[p.city]; if(!c) continue;
+    if(!cityMap[p.city]) cityMap[p.city] = { lat:c.lat, lng:c.lng, people:[], name:p.city };
+    cityMap[p.city].people.push(p);
+  }
+  if(ME && ME.privacy?.onMap){
+    const c = CITIES[ME.city];
+    if(c && !cityMap[ME.city]) cityMap[ME.city] = { lat:c.lat, lng:c.lng, people:[], name:ME.city };
+    if(cityMap[ME.city]) cityMap[ME.city].people.push(ME);
+  }
+  const cities = Object.values(cityMap);
+
+  // Glow rings — altitude scales with count, color by online presence
+  globeInstance.ringsData(cities)
+    .ringLat(d => d.lat)
+    .ringLng(d => d.lng)
+    .ringColor(d => {
+      const hasOnline = d.people.some(p => ONLINE_IDS.has(p.id));
+      return hasOnline ? ["rgba(70,214,164,0.9)", "rgba(70,214,164,0)"] : ["rgba(255,138,76,0.8)", "rgba(255,138,76,0)"];
+    })
+    .ringMaxRadius(d => 3 + Math.sqrt(d.people.length) * 2)
+    .ringPropagationSpeed(1.2)
+    .ringRepeatPeriod(900);
+
+  // City labels
+  globeInstance.labelsData(cities)
+    .labelLat(d => d.lat)
+    .labelLng(d => d.lng)
+    .labelText(d => `${d.name.split(",")[0]} · ${d.people.length}`)
+    .labelSize(1.4)
+    .labelDotRadius(0.5)
+    .labelColor(() => "rgba(255,255,255,0.85)")
+    .labelResolution(2);
+
+  // Points (individual pins) — pulse green if online
+  const points = list.map(p => {
+    const c = CITIES[p.city]; if(!c) return null;
+    const j = jitter(p.city, p.id); if(!j) return null;
+    return { lat:j.lat, lng:j.lng, person:p, online: ONLINE_IDS.has(p.id) };
+  }).filter(Boolean);
+  if(ME && ME.privacy?.onMap){
+    const j = jitter(ME.city, ME.id+"me");
+    if(j) points.push({ lat:j.lat, lng:j.lng, person:ME, online:true, isMe:true });
+  }
+  globeInstance.pointsData(points)
+    .pointLat(d => d.lat)
+    .pointLng(d => d.lng)
+    .pointColor(d => d.isMe ? "#46d6a4" : d.online ? "#46d6a4" : trackColor(d.person.track))
+    .pointAltitude(d => d.online ? 0.015 : 0.005)
+    .pointRadius(d => d.isMe ? 0.55 : 0.4)
+    .onPointClick(d => {
+      if(!d.person || d.isMe) return;
+      // Draw a glowing arc from ME's city to the clicked person's city
+      if(ME){
+        const from = jitter(ME.city, ME.id+"me") || CITIES[ME.city];
+        const to   = { lat:d.lat, lng:d.lng };
+        if(from) showGlobeArc(from, to, d.person);
+      }
+    });
+
+  // Arc — show or clear
+  if(pendingArc){
+    globeInstance.arcsData([pendingArc])
+      .arcStartLat(a => a.fromLat).arcStartLng(a => a.fromLng)
+      .arcEndLat(a => a.toLat).arcEndLng(a => a.toLng)
+      .arcColor(() => ["rgba(255,138,76,0.9)", "rgba(99,164,255,0.9)"])
+      .arcAltitude(0.28)
+      .arcStroke(0.7)
+      .arcDashLength(0.4)
+      .arcDashGap(0.2)
+      .arcDashAnimateTime(1200);
+  } else {
+    globeInstance.arcsData([]);
+  }
+}
+
+function showGlobeArc(from, to, person){
+  pendingArc = { fromLat:from.lat, fromLng:from.lng, toLat:to.lat, toLng:to.lng };
+  renderGlobe();
+  // Fly the globe to point toward the destination
+  globeInstance.pointOfView({ lat:(from.lat+to.lat)/2, lng:(from.lng+to.lng)/2, altitude:1.4 }, 900);
+  // Show a toast with the person's name
+  toast(`✨ ${person.name} · ${person.city}`);
+  setTimeout(()=>{ pendingArc=null; renderGlobe(); }, 5000);
+}
+
+function toggleGlobe(){
+  globeOn = !globeOn;
+  const container = document.getElementById("globe-container");
+  const mapEl = document.getElementById("map");
+  const btn = document.getElementById("btn-globe");
+  container.classList.toggle("active", globeOn);
+  // Leaflet tiles look bad peeking behind globe — just hide/show the map
+  if(mapEl) mapEl.style.opacity = globeOn ? "0" : "1";
+  if(btn){ btn.classList.toggle("on", globeOn); btn.setAttribute("aria-pressed", String(globeOn)); }
+  if(globeOn){
+    if(!globeInstance) initGlobe(); else renderGlobe();
+  }
+}
+
+function updateGlobeTheme(){
+  if(!globeInstance) return;
+  const isDark = currentTheme() !== "light";
+  globeInstance.globeImageUrl(isDark
+    ? "https://unpkg.com/three-globe/example/img/earth-night.jpg"
+    : "https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg");
+}
+
+/* ============================================================================
    LOGIN + BOOT
    ========================================================================== */
 let tileLayer=null;
@@ -1137,6 +1321,7 @@ function wireMapTools(){
     hbtn.addEventListener("click", ()=>{ heatOn=!heatOn; localStorage.setItem("orbit-heat", heatOn?"on":"off");
       hbtn.classList.toggle("on", heatOn); hbtn.setAttribute("aria-pressed", String(heatOn)); renderMap(); });
   }
+  const gbtn=$("#btn-globe"); if(gbtn && !gbtn._wired){ gbtn._wired=true; gbtn.addEventListener("click", toggleGlobe); }
   const inp=$("#map-city-search"), box=$("#map-suggest");
   if(!inp || inp._wired) return; inp._wired=true;
   const cities=Object.keys(CITIES);
@@ -1238,6 +1423,9 @@ async function enterApp(){
   // Subscribe to real-time messages
   subscribeToMessages();
 
+  // Subscribe to presence (who's online right now)
+  subscribePresence();
+
   // Subscribe to user changes
   db.channel('users-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
@@ -1279,6 +1467,7 @@ function applyTheme(theme){
   const btn=$("#btn-theme");
   if(btn){ btn.textContent = theme==="light" ? "☀️" : "🌙"; btn.title = `Switch to ${theme==="light"?"dark":"light"} mode`; }
   setMapTiles(theme); // swap Leaflet basemap to match
+  updateGlobeTheme();
 }
 function toggleTheme(){
   const next = currentTheme()==="light" ? "dark" : "light";

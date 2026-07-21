@@ -252,6 +252,25 @@
   .locate-refresh.spin { animation:spin 1s linear infinite; }
   .btn.map-heat { background:var(--overlay); backdrop-filter:blur(6px); box-shadow:var(--shadow-sm); white-space:nowrap; }
   .btn.map-heat.on { background:linear-gradient(180deg,var(--accent-2),var(--accent)); color:#26140a; border-color:transparent; }
+  .btn.map-globe { background:var(--overlay); backdrop-filter:blur(6px); box-shadow:var(--shadow-sm); white-space:nowrap; }
+  .btn.map-globe.on { background:linear-gradient(180deg,#63a4ff,#3b7edb); color:#fff; border-color:transparent; }
+
+  /* Globe container — sits directly over #map, hidden by default */
+  #globe-container { position:absolute; inset:0; z-index:10; display:none; background:#03060f; overflow:hidden; }
+  #globe-container.active { display:block; }
+
+  /* Live presence pulse ring around online markers */
+  @keyframes presencePulse {
+    0%   { transform:scale(1);   opacity:.9; }
+    70%  { transform:scale(2.2); opacity:0; }
+    100% { transform:scale(2.2); opacity:0; }
+  }
+  .presence-pulse {
+    position:absolute; inset:-6px; border-radius:50%;
+    border:2px solid #46d6a4;
+    animation:presencePulse 1.8s ease-out infinite;
+    pointer-events:none;
+  }
   @media (max-width:820px){ .map-search { width:150px; } .map-toolbar { flex-direction:column; } }
 
   .list-wrap { padding:24px 20px; max-width:1100px; margin:0 auto; }
