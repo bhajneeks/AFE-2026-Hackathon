@@ -43,6 +43,43 @@ const CITIES = {
 };
 const INTERESTS = ["backend systems","frontend","ML / AI","distributed systems","mobile","security","data eng","design systems","UX research","accessibility","devtools","gaming","rock climbing","coffee","running","board games","cooking","photography","music"];
 
+/* ---------- Building suggestions per hub ------------------------------------
+   The building field is FREE-TEXT (users type their real building, e.g. "SEA40")
+   — these are just autocomplete SUGGESTIONS shown in a <datalist>, keyed by city.
+   They are a SAMPLE starter set, NOT the authoritative Amazon directory. To load
+   the full, real list, paste the atoz workplace directory export here (same
+   shape: "City, ST": ["CODE1","CODE2", ...]). Anything a user types that's not
+   listed is still accepted and becomes filterable. ------------------------- */
+const BUILDINGS = {
+  "Seattle, WA":      ["SEA40","SEA41","SEA10","SEA20","SEA21","SEA22","SEA23","SEA43","SEA48","SEA61","SEA62","SEA83"],
+  "Bellevue, WA":     ["BEL10","BEL11","BEL15","BEL25","BEL27","BEL30","BEL33"],
+  "Portland, OR":     ["PDX10","PDX11","PDX12"],
+  "Vancouver, BC":    ["YVR12","YVR14","YVR16"],
+  "San Francisco, CA":["SFO12","SFO16","SFO18","SFO40"],
+  "Sunnyvale, CA":    ["SVL10","SVL12","SVL14","SVL16"],
+  "Santa Monica, CA": ["SMF1","LADC","SNA1"],
+  "Irvine, CA":       ["IRV1","IRV7","IRV11"],
+  "San Diego, CA":    ["SAN1","SAN10","SAN13"],
+  "Tempe, AZ":        ["PHX1","PHX2","TPE1"],
+  "Boulder, CO":      ["BOU1","BOU2"],
+  "Denver, CO":       ["DEN1","DEN10","DEN11"],
+  "Dallas, TX":       ["DAL1","DFW1","DFW7"],
+  "Austin, TX":       ["AUS1","AUS2","AUS10","AUS12"],
+  "Minneapolis, MN":  ["MSP1","MSP10"],
+  "Chicago, IL":      ["CHI1","CHI10","ORD5"],
+  "Nashville, TN":    ["BNA1","BNA2","NOC1"],
+  "Detroit, MI":      ["DTW1","DET1"],
+  "Pittsburgh, PA":   ["PIT1","PIT2"],
+  "Atlanta, GA":      ["ATL1","ATL10","ATL5"],
+  "Toronto, ON":      ["YYZ12","YYZ14","TOR5"],
+  "Arlington, VA":    ["ARL01","ARL02","ARL03","ARL05"],
+  "Herndon, VA":      ["HER1","HER2","IAD12"],
+  "New York, NY":     ["NYC5","NYC7","NYC8","NYC12","NYC21"],
+  "Boston, MA":       ["BOS7","BOS15","BOS27"],
+  "Remote / Virtual": []
+};
+function buildingsForCity(city){ return BUILDINGS[city] || []; }
+
 /* ---------- Seed people (fake AFE directory — mirrors supabase-seed-users.sql;
    replaced at runtime by live `users` rows in doLogin) --------------------- */
 let PEOPLE = [
@@ -95,7 +132,7 @@ const DEFAULT_PRIVACY = { onMap:true, city:true, office:true, school:true, inter
 /* ---------- State --------------------------------------------------------- */
 const state = {
   view:"map", q:"",
-  quick:new Set(), tracks:new Set(), cities:new Set(), interests:new Set(),
+  quick:new Set(), tracks:new Set(), cities:new Set(), buildings:new Set(), interests:new Set(),
   cadence:"week" // Pair Up cadence: week | biweek
 };
 
@@ -118,6 +155,8 @@ function tzOf(city){ return (CITIES[city]||{}).tz || "—"; }
 // "University of Texas" into "University" — so we compare the full name.)
 function schoolKey(s){ return (s||"").split("→")[0].trim().toLowerCase(); }
 function sameSchool(a,b){ const x=schoolKey(a); return !!x && x===schoolKey(b); }
+// Building match: case-insensitive exact match on a non-empty building code.
+function sameBuilding(a,b){ const x=(a||"").trim().toLowerCase(); return !!x && x===(b||"").trim().toLowerCase(); }
 
 /* avatar that supports an uploaded photo (data URL) or falls back to initials */
 // Sanitize a photo value for use inside a single-quoted CSS url(...): drop quotes,
@@ -151,7 +190,8 @@ function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").rep
 function connectionReasons(person){
   const r=[];  // t = second-person (UI chips) · me = first-person (messages I send)
   if(ME){
-    if(person.city===ME.city && person.city!=="Remote / Virtual") r.push({t:`you're both in ${person.city}`, me:`we're both in ${person.city}`, key:"city"});
+    if(sameBuilding(person.building, ME.building)) r.push({t:`you're both in building ${person.building}`, me:`we're both in building ${person.building}`, key:"building"});
+    else if(person.city===ME.city && person.city!=="Remote / Virtual") r.push({t:`you're both in ${person.city}`, me:`we're both in ${person.city}`, key:"city"});
     if(sameSchool(person.school, ME.school)) r.push({t:`you both went to ${person.school}`, me:`we both go to ${person.school}`, key:"school"});
     if(tzOf(person.city)===tzOf(ME.city) && tzOf(ME.city)!=="—") r.push({t:`same timezone (${tzOf(person.city)})`, me:`we're in the same timezone (${tzOf(person.city)})`, key:"tz"});
     if(person.track===ME.track && ME.track!=="alumni") r.push({t:`you're both ${person.track} interns`, me:`we're both ${person.track} interns`, key:"track"});
@@ -382,16 +422,18 @@ function visiblePeople(){
     if(ME && p.id===ME.id) return false;
     if(state.tracks.size){ const t=p.track; if(!state.tracks.has(t)) return false; }
     if(state.cities.size && !state.cities.has(p.city)) return false;
+    if(state.buildings.size && !state.buildings.has(p.building)) return false;
     if(state.interests.size && !(p.interests||[]).some(i=>state.interests.has(i))) return false;
     if(state.quick.has("coffee") && p.avail!=="coffee") return false;
     if(state.quick.has("newToo") && !p.newToo) return false;
     if(ME){
       if((state.quick.has("sameCity")||state.quick.has("nearby")) && p.city!==ME.city) return false;
+      if(state.quick.has("sameBuilding") && !sameBuilding(p.building, ME.building)) return false;
       if(state.quick.has("sameSchool") && !sameSchool(p.school, ME.school)) return false;
       if(state.quick.has("sameTz") && tzOf(p.city)!==tzOf(ME.city)) return false;
     }
     if(q){
-      const hay=[p.name,p.city,p.school,p.org,(p.interests||[]).join(" "),(p.topics||[]).join(" ")].join(" ").toLowerCase();
+      const hay=[p.name,p.city,p.building,p.school,p.org,(p.interests||[]).join(" "),(p.topics||[]).join(" ")].join(" ").toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -418,7 +460,7 @@ function renderCards(){
         ${avatarHTML(p,"av-lg")}
         <div style="flex:1">
           <div class="name">${esc(p.name)} <span class="track-badge ${p.track}">${trackLabel(p.track)}</span></div>
-          <div class="sub">${esc(p.org)} · ${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)} · 🕒 ${tzOf(p.city)}</div>
+          <div class="sub">${esc(p.org)} · ${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)}${p.building?` · 🏢 ${esc(p.building)}`:""} · 🕒 ${tzOf(p.city)}</div>
         </div>
       </div>
       <div style="margin-top:10px"><span class="avail ${p.avail}">${availText(p.avail)}</span> <span class="muted" style="font-size:12.5px">· ${esc(p.school)}</span></div>
@@ -453,7 +495,7 @@ function renderMap(){
           <div style="width:38px;height:38px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-weight:800;color:#10182b;background-size:cover;background-position:center;${p.photo?`background-image:url('${safePhotoUrl(p.photo)}')`:avatarStyle(p.name)}">${p.photo?"":initials(p.name)}</div>
           <div><b>${esc(p.name)}</b> <span style="font-size:10px;color:#888">${trackLabel(p.track)}</span><br><span style="color:#666;font-size:12px">${esc(p.org)}</span></div>
         </div>
-        <div style="color:#777;font-size:12px">${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)} · ${tzOf(p.city)} · ${esc(p.school)}</div>
+        <div style="color:#777;font-size:12px">${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)}${p.building?` · 🏢 ${esc(p.building)}`:""} · ${tzOf(p.city)} · ${esc(p.school)}</div>
         ${reasons.length?`<div style="margin-top:6px;color:#0a7;font-size:12px">✨ ${reasons[0].t}</div>`:""}
         <div style="display:flex;gap:6px;margin-top:9px">
           <button onclick="startDM('${p.id}')" style="flex:1;padding:7px;border:none;border-radius:8px;background:linear-gradient(180deg,#ffb27a,#ff8a4c);color:#26140a;font-weight:800;cursor:pointer">💬 Message</button>
@@ -486,6 +528,7 @@ function pairScore(p){
   if(!ME) return 0; let s=0;
   s += (p.interests||[]).filter(i=>(ME.interests||[]).includes(i)).length*2;
   if(p.city===ME.city && p.city!=="Remote / Virtual") s+=2;
+  if(sameBuilding(p.building, ME.building)) s+=3; // same building = easiest to meet in person
   if(tzOf(p.city)===tzOf(ME.city) && tzOf(ME.city)!=="—") s+=1;
   if(p.track===ME.track) s+=1;
   if(sameSchool(p.school, ME.school)) s+=3;
@@ -539,7 +582,7 @@ function matchCardHTML(p){
       <div class="wholine">Your pairing this round</div>
       ${avatarHTML(p,"av-xl")}
       <div class="nm">${esc(p.name)} <span class="track-badge ${p.track}" style="vertical-align:middle">${trackLabel(p.track)}</span></div>
-      <div class="role">${esc(p.org)} · ${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)} · 🕒 ${tzOf(p.city)}</div>
+      <div class="role">${esc(p.org)} · ${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)}${p.building?` · 🏢 ${esc(p.building)}`:""} · 🕒 ${tzOf(p.city)}</div>
       <div class="role" style="margin-top:6px">🎓 ${esc(p.school)} · <span class="avail ${p.avail}" style="vertical-align:middle">${availText(p.avail)}</span></div>
       <div class="why">${why.map(r=>`<span class="r">✨ ${r.t}</span>`).join("")}</div>
       <div class="cta">
@@ -588,14 +631,28 @@ function buildFilterChips(){
     s.textContent=c==="Remote / Virtual"?"🌐 Virtual":c.split(",")[0]; cf.appendChild(s); });
   const inf=$("#interest-filters"); inf.innerHTML="";
   INTERESTS.forEach(i=>{ const s=document.createElement("span"); s.className="chip"; s.dataset.interest=i; s.textContent=i; inf.appendChild(s); });
+  buildBuildingChips();
+}
+// Building chips are derived from the buildings people actually have (live data),
+// not a fixed list — so it reflects who's really signed in. Rebuilt after load.
+function buildBuildingChips(){
+  const bf=$("#building-filters"); if(!bf) return;
+  const set=new Set();
+  PEOPLE.forEach(p=>{ if(p.building) set.add(p.building); });
+  if(ME&&ME.building) set.add(ME.building);
+  const list=[...set].sort();
+  bf.innerHTML="";
+  if(!list.length){ bf.innerHTML=`<span class="muted" style="font-size:12px">No buildings yet</span>`; return; }
+  list.forEach(b=>{ const s=document.createElement("span"); s.className="chip"+(state.buildings.has(b)?" on":""); s.dataset.building=b; s.textContent="🏢 "+b; bf.appendChild(s); });
 }
 function wireFilters(){
   $("#q").addEventListener("input", e=>{ state.q=e.target.value; renderCards(); renderMap(); });
   $("#quick-filters").addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c) toggleSet(state.quick,c.dataset.f,c); });
   $("#track-filters").addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c) toggleSet(state.tracks,c.dataset.track,c); });
   $("#city-filters").addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c) toggleSet(state.cities,c.dataset.city,c); });
+  $("#building-filters").addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c&&c.dataset.building) toggleSet(state.buildings,c.dataset.building,c); });
   $("#interest-filters").addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c) toggleSet(state.interests,c.dataset.interest,c); });
-  $("#reset").addEventListener("click", ()=>{ state.quick.clear(); state.tracks.clear(); state.cities.clear(); state.interests.clear(); state.q=""; $("#q").value=""; $$(".chip").forEach(c=>c.classList.remove("on")); renderCards(); renderMap(); });
+  $("#reset").addEventListener("click", ()=>{ state.quick.clear(); state.tracks.clear(); state.cities.clear(); state.buildings.clear(); state.interests.clear(); state.q=""; $("#q").value=""; $$(".chip").forEach(c=>c.classList.remove("on")); renderCards(); renderMap(); });
 }
 function toggleSet(set,key,el){ if(set.has(key)){ set.delete(key); el.classList.remove("on"); } else { set.add(key); el.classList.add("on"); } renderCards(); renderMap(); }
 
@@ -772,13 +829,19 @@ function profileFormHTML(heading, m, isOnboarding){
       </div>
       <div class="two-col">
         <label class="fld"><span class="lab">Name</span><input id="f-name" value="${esc(m?.name||'')}" placeholder="Your name"></label>
-        <label class="fld"><span class="lab">Track</span><select id="f-track"><option value="SDE" ${m?.track==='SDE'?'selected':''}>SDE — software</option><option value="HDE" ${m?.track==='HDE'?'selected':''}>HDE — design</option></select></label>
+        <label class="fld"><span class="lab">Track</span><select id="f-track"><option value="SDE" ${m?.track==='SDE'?'selected':''}>SDE — Software Development Engineer</option><option value="HDE" ${m?.track==='HDE'?'selected':''}>HDE — Hardware Development Engineer</option></select></label>
       </div>
       <div class="two-col">
-        <label class="fld"><span class="lab">City</span><select id="f-city">${Object.keys(CITIES).map(c=>`<option ${m?.city===c?'selected':''}>${c}</option>`).join("")}</select></label>
-        <label class="fld"><span class="lab">School</span><input id="f-school" value="${esc(m?.school||'')}" placeholder="e.g. University of Washington"></label>
+        <label class="fld"><span class="lab">City</span><select id="f-city" onchange="refreshBuildingOptions()">${Object.keys(CITIES).map(c=>`<option ${m?.city===c?'selected':''}>${c}</option>`).join("")}</select></label>
+        <label class="fld"><span class="lab">Building</span>
+          <input id="f-building" list="building-list" value="${esc(m?.building||'')}" placeholder="e.g. SEA40" autocomplete="off">
+          <datalist id="building-list">${buildingsForCity(m?.city||Object.keys(CITIES)[0]).map(b=>`<option value="${esc(b)}">`).join("")}</datalist>
+        </label>
       </div>
-      <label class="fld"><span class="lab">Team / org</span><input id="f-org" value="${esc(m?.org||'')}" placeholder="e.g. Cloud · Compute"></label>
+      <div class="two-col">
+        <label class="fld"><span class="lab">School</span><input id="f-school" value="${esc(m?.school||'')}" placeholder="e.g. University of Washington"></label>
+        <label class="fld"><span class="lab">Team / org</span><input id="f-org" value="${esc(m?.org||'')}" placeholder="e.g. Cloud · Compute"></label>
+      </div>
       <div class="two-col">
         <label class="fld"><span class="lab">Email</span><input id="f-email" value="${esc(m?.email||'')}" placeholder="you@example.com"></label>
         <label class="fld"><span class="lab">LinkedIn (optional)</span><input id="f-linkedin" value="${esc(m?.linkedin||'')}" placeholder="profile URL or handle"></label>
@@ -810,6 +873,11 @@ window.onPhotoPick=function(ev){
 };
 window.clearPhoto=function(){ PHOTO_DRAFT=null; const prev=$("#photo-prev"); if(prev){ const nm=$("#f-name")?.value||ME?.name||"You"; prev.style.backgroundImage="none"; prev.setAttribute("style", avatarStyle(nm)); prev.textContent=initials(nm); } };
 document.addEventListener("click", e=>{ const chip=e.target.closest("#f-interests .chip"); if(chip) chip.classList.toggle("on"); });
+// When the city changes in the profile form, refresh the building autocomplete list.
+window.refreshBuildingOptions=function(){
+  const city=$("#f-city")?.value, dl=$("#building-list"); if(!dl) return;
+  dl.innerHTML=buildingsForCity(city).map(b=>`<option value="${esc(b)}">`).join("");
+};
 
 window.saveProfile=async function(isOnboarding){
   const name=$("#f-name").value.trim(); if(!name){ toast("Add your name to continue"); return; }
@@ -818,7 +886,7 @@ window.saveProfile=async function(isOnboarding){
   ME={
     ...ME,
     name, track:$("#f-track").value, city:$("#f-city").value, school:$("#f-school").value,
-    org:$("#f-org").value, email:$("#f-email").value.trim(), linkedin:li,
+    org:$("#f-org").value, building:$("#f-building").value.trim(), email:$("#f-email").value.trim(), linkedin:li,
     avail:$("#f-avail").value, newToo:$("#f-new").value==="yes",
     interests:$$("#f-interests .chip.on").map(c=>c.dataset.i),
     photo:PHOTO_DRAFT || ME?.photo || null,
@@ -826,7 +894,7 @@ window.saveProfile=async function(isOnboarding){
   };
   // Persist to Supabase
   await db.from('users').update({
-    name: ME.name, track: ME.track, city: ME.city, school: ME.school, org: ME.org,
+    name: ME.name, track: ME.track, city: ME.city, school: ME.school, org: ME.org, building: ME.building,
     linkedin: ME.linkedin, avail: ME.avail, new_too: ME.newToo, interests: ME.interests,
     bio: ME.bio||'', photo: ME.photo, privacy: ME.privacy, email: ME.email
   }).eq('id', ME.id);

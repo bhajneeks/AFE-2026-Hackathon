@@ -43,8 +43,11 @@ vercel.json                deploy config (outputDirectory: public)
 
 ## Features
 
-- **Login + opt-in profile** — find-or-create by email; name, photo, city, school,
-  team/org, SDE/HDE track, interests, availability, LinkedIn. Persisted in Supabase.
+- **Login + opt-in profile** — Google sign-in; name, photo, city, **building**,
+  school, team/org, track (SDE — Software Development Engineer / HDE — Hardware
+  Development Engineer), interests, availability, LinkedIn. Persisted in Supabase.
+- **Building** — free-text with per-hub autocomplete suggestions; people can be
+  filtered and grouped by building, and "same building" boosts matches.
 - **AFE Map** — interns shown as **face pins** at their city center, colored by
   track (SDE / HDE / alumni). Click a pin to message or connect.
 - **Connection filters** — nearby, same city, same school, same timezone,
