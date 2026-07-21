@@ -638,21 +638,41 @@ function swipeCardHTML(p, score, i){
   const reasons=connectionReasons(p);
   const why=reasons.length?reasons.slice(0,3):[{t:"A fresh connection this week"}];
   const pct=compatPercent(score);
+  const sharedSet=new Set((ME?.interests||[]).filter(x=>(p.interests||[]).includes(x)));
+  const loc = p.city==="Remote / Virtual" ? "Virtual" : esc(p.city);
+  const interests=(p.interests||[]).slice(0,6);
+  // Sort shared interests first so overlap reads immediately.
+  interests.sort((a,b)=>(sharedSet.has(b)?1:0)-(sharedSet.has(a)?1:0));
   return `
     <div class="swipe-card" data-id="${p.id}" data-i="${i}" style="--i:${i}">
       <div class="swipe-stamp like">CONNECT</div>
       <div class="swipe-stamp nope">PASS</div>
-      <div class="swipe-top">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <div class="wholine">MEET</div>
-          <div class="match-pct">${pct}% match</div>
-        </div>
+      <div class="sc-header">
+        <div class="match-pct">${pct}% match</div>
         ${avatarHTML(p,"av-xl")}
-        <div class="nm" style="margin-top:12px">${esc(p.name)} <span class="track-badge ${p.track}" style="vertical-align:middle">${trackLabel(p.track)}</span>${p.afe_class?` <span class="track-badge" style="background:var(--accent-tint);color:var(--accent)">AFE '${p.afe_class.slice(-2)}</span>`:""}</div>
-        <div class="role">${esc(p.org)}${p.org?" · ":""}${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}${p.building?` · ${esc(p.building)}`:""}</div>
-        <div class="role" style="margin-top:3px">${esc(p.school)} · ${tzOf(p.city)}</div>
+        <div class="nm">${esc(p.name)}</div>
+        <div class="sc-badges">
+          <span class="track-badge ${p.track}">${trackLabel(p.track)}</span>
+          ${p.afe_class?`<span class="track-badge afe">AFE '${p.afe_class.slice(-2)}</span>`:""}
+          ${p.avail&&p.avail!=="busy"?`<span class="avail ${p.avail}">${availText(p.avail)}</span>`:""}
+        </div>
       </div>
-      <div class="why">${why.map(r=>`<span class="r">${r.t}</span>`).join("")}</div>
+      <div class="sc-body">
+        <div class="sc-facts">
+          ${p.org?`<div class="sc-fact"><span class="ic">🏢</span>${esc(p.org)}</div>`:""}
+          <div class="sc-fact"><span class="ic">📍</span>${loc}${p.building?` · ${esc(p.building)}`:""} · ${tzOf(p.city)}</div>
+          ${p.school?`<div class="sc-fact"><span class="ic">🎓</span>${esc(p.school)}</div>`:""}
+        </div>
+        <div class="sc-section">
+          <div class="sc-label">Why you'll click</div>
+          <div class="why">${why.map(r=>`<span class="r">${r.t}</span>`).join("")}</div>
+        </div>
+        ${interests.length?`
+        <div class="sc-section">
+          <div class="sc-label">Into</div>
+          <div class="sc-interests">${interests.map(x=>`<span class="tag ${sharedSet.has(x)?'match':''}">${sharedSet.has(x)?'★ ':''}${esc(x)}</span>`).join("")}</div>
+        </div>`:""}
+      </div>
     </div>`;
 }
 // Drag + button interactions for the top card of the deck.

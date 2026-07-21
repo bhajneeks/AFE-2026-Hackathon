@@ -405,21 +405,33 @@
     display:flex; flex-direction:column; cursor:grab; user-select:none; touch-action:pan-y;
     transform-origin:center bottom; will-change:transform; }
   .swipe-card:active { cursor:grabbing; }
-  .swipe-card::after { content:""; position:absolute; top:0; left:0; right:0; height:6px; background:linear-gradient(90deg,var(--accent),var(--accent-2)); }
   /* Stack the two cards behind the top one, slightly scaled + offset. */
   .swipe-card[data-i="0"] { z-index:3; }
   .swipe-card[data-i="1"] { z-index:2; transform:translateY(14px) scale(.955); filter:saturate(.9); }
   .swipe-card[data-i="2"] { z-index:1; transform:translateY(28px) scale(.91);  filter:saturate(.8); }
   .swipe-card.flung { z-index:4; }
-  .swipe-top { display:flex; flex-direction:column; align-items:center; }
-  .swipe-card .wholine { color:var(--ink-faint); font-size:11px; letter-spacing:1.4px; text-transform:uppercase; }
-  .swipe-card .match-pct { background:var(--accent); color:#000; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:800; }
-  .swipe-card > div:first-of-type { width:100%; }
-  .swipe-card .av-xl { margin:4px auto 0; }
-  .swipe-card .nm { font-family:var(--font-display); font-size:23px; font-weight:800; letter-spacing:-.4px; }
-  .swipe-card .role { color:var(--ink-dim); font-size:13.5px; margin-top:3px; }
-  .swipe-card .why { margin-top:auto; padding-top:16px; display:flex; flex-wrap:wrap; justify-content:center; gap:7px; }
+
+  /* Header band — warm gradient with avatar + identity */
+  .sc-header { position:relative; margin:-30px -28px 0; padding:26px 24px 18px; text-align:center;
+    background:linear-gradient(160deg, var(--accent), var(--accent-2)); color:#26140a; }
+  .sc-header .match-pct { position:absolute; top:14px; right:16px; background:rgba(255,255,255,.92); color:var(--accent-2); padding:4px 11px; border-radius:999px; font-size:12px; font-weight:800; box-shadow:0 2px 8px rgba(0,0,0,.12); }
+  .sc-header .av-xl { margin:2px auto 10px; width:88px; height:88px; border-radius:22px; box-shadow:0 0 0 4px rgba(255,255,255,.55), 0 8px 20px rgba(0,0,0,.18); }
+  .sc-header .nm { font-family:var(--font-display); font-size:24px; font-weight:800; letter-spacing:-.4px; line-height:1.1; }
+  .sc-badges { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:10px; }
+  .sc-badges .track-badge { background:rgba(0,0,0,.14); color:#26140a; }
+  .sc-badges .track-badge.afe { background:rgba(255,255,255,.85); color:var(--accent-2); }
+  .sc-badges .avail { background:rgba(255,255,255,.85); color:var(--accent-2); }
+
+  /* Body — facts + sections */
+  .sc-body { flex:1; display:flex; flex-direction:column; gap:16px; padding-top:18px; overflow:hidden; text-align:left; }
+  .sc-facts { display:flex; flex-direction:column; gap:8px; }
+  .sc-fact { display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--ink-dim); font-weight:500; }
+  .sc-fact .ic { width:20px; text-align:center; flex:0 0 auto; filter:saturate(0) opacity(.7); }
+  .sc-label { font-size:11px; text-transform:uppercase; letter-spacing:1.2px; color:var(--ink-faint); font-weight:800; margin-bottom:8px; }
+  .swipe-card .why { display:flex; flex-wrap:wrap; gap:7px; }
   .swipe-card .why .r { display:inline-flex; align-items:center; background:var(--accent-tint); border:1px solid rgba(255,153,0,.3); color:var(--accent-2); padding:5px 11px; border-radius:999px; font-size:12px; font-weight:600; }
+  .sc-interests { display:flex; flex-wrap:wrap; gap:7px; }
+  .sc-interests .tag.match { background:var(--accent-tint); border-color:var(--accent); color:var(--accent-2); font-weight:700; }
   /* Swipe direction stamps */
   .swipe-stamp { position:absolute; top:26px; font-family:var(--font-display); font-weight:800; font-size:26px; letter-spacing:1px;
     padding:6px 14px; border-radius:12px; border:3px solid; opacity:0; pointer-events:none; transition:opacity .1s ease; z-index:5; }
