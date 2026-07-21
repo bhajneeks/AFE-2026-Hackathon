@@ -1440,6 +1440,7 @@ function initMap(){
   setMapTiles(currentTheme());
   markerLayer=L.layerGroup().addTo(map);
   renderMap();
+  restoreSavedPin();
   wireMapTools();
 }
 
@@ -1537,8 +1538,6 @@ function locateFallbackToCity(){
 }
 
 function wireMapTools(){
-  const btn=$("#btn-locate"); if(btn && !btn._wired){ btn._wired=true; btn.addEventListener("click", locateMe); }
-  const rbtn=$("#btn-locate-refresh"); if(rbtn && !rbtn._wired){ rbtn._wired=true; rbtn.addEventListener("click", ()=>{ rbtn.classList.add("spin"); const clear=()=>rbtn.classList.remove("spin"); setTimeout(clear,1200); fetchAndCacheLocation(); }); }
   const hbtn=$("#btn-heat"); if(hbtn && !hbtn._wired){ hbtn._wired=true;
     hbtn.classList.toggle("on", heatOn); hbtn.setAttribute("aria-pressed", String(heatOn));
     hbtn.addEventListener("click", ()=>{ heatOn=!heatOn; localStorage.setItem("orbit-heat", heatOn?"on":"off");
@@ -1789,19 +1788,22 @@ async function obFinish(){
    ========================================================================== */
 function enablePinDrop(){
   if(!map) return;
+  // If globe is showing, switch back to map first
+  if(typeof globeOn!=="undefined" && globeOn){
+    const gbtn=$("#btn-globe"); if(gbtn) gbtn.click();
+  }
   pinDropMode = true;
   document.body.classList.add("pin-drop-mode");
   const btn = $("#btn-pin-drop");
-  if(btn) btn.classList.add("on");
-  toast("Tap the map to set your location");
+  if(btn){ btn.classList.add("on"); btn.textContent="Tap map..."; }
+  toast("Tap anywhere on the map to drop your pin");
 
-  // One-time click handler on the map
   map.once("click", function(e){
     const {lat, lng} = e.latlng;
     saveCachedLocation({lat, lng, accuracy:500, ts:Date.now()});
-    showLocation(lat, lng, 500);
+    showLocation(lat, lng, 500, {announce:true});
     disablePinDrop();
-    toast("Location pinned");
+    toast("Pin dropped — this is your location now");
   });
 }
 
@@ -1809,7 +1811,12 @@ function disablePinDrop(){
   pinDropMode = false;
   document.body.classList.remove("pin-drop-mode");
   const btn = $("#btn-pin-drop");
-  if(btn) btn.classList.remove("on");
+  if(btn){ btn.classList.remove("on"); btn.textContent="Drop pin"; }
+}
+// Show saved pin on map load
+function restoreSavedPin(){
+  const cached = getCachedLocation();
+  if(cached && map) showLocation(cached.lat, cached.lng, cached.accuracy||500, {announce:false});
 }
 
 async function enterApp(){
