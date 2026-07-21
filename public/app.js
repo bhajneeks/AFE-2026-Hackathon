@@ -188,42 +188,34 @@ function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").rep
    CONNECTION REASONS + MESSAGE GENERATORS (DM opener + LinkedIn note)
    ========================================================================== */
 function connectionReasons(person){
-  const r=[];
+  const r=[];  // t = second-person (UI chips) · me = first-person (messages I send)
   if(ME){
-    if(sameBuilding(person.building, ME.building)) r.push({t:`you're both in building ${person.building}`, key:"building"});
-    else if(person.city===ME.city && person.city!=="Remote / Virtual") r.push({t:`you're both in ${person.city}`, key:"city"});
-    if(sameSchool(person.school, ME.school)) r.push({t:`you both went to ${person.school}`, key:"school"});
-    if(tzOf(person.city)===tzOf(ME.city) && tzOf(ME.city)!=="—") r.push({t:`same timezone (${tzOf(person.city)})`, key:"tz"});
-    if(person.track===ME.track && ME.track!=="alumni") r.push({t:`you're both ${person.track} interns`, key:"track"});
-    if(person.newToo && ME.newToo) r.push({t:"you're both new to this", key:"new"});
+    if(sameBuilding(person.building, ME.building)) r.push({t:`you're both in building ${person.building}`, me:`we're both in building ${person.building}`, key:"building"});
+    else if(person.city===ME.city && person.city!=="Remote / Virtual") r.push({t:`you're both in ${person.city}`, me:`we're both in ${person.city}`, key:"city"});
+    if(sameSchool(person.school, ME.school)) r.push({t:`you both went to ${person.school}`, me:`we both go to ${person.school}`, key:"school"});
+    if(tzOf(person.city)===tzOf(ME.city) && tzOf(ME.city)!=="—") r.push({t:`same timezone (${tzOf(person.city)})`, me:`we're in the same timezone (${tzOf(person.city)})`, key:"tz"});
+    if(person.track===ME.track && ME.track!=="alumni") r.push({t:`you're both ${person.track} interns`, me:`we're both ${person.track} interns`, key:"track"});
+    if(person.newToo && ME.newToo) r.push({t:"you're both new to this", me:"we're both new to this", key:"new"});
     const shared=(person.interests||[]).filter(i=>(ME.interests||[]).includes(i));
-    if(shared.length) r.push({t:`shared interest in ${shared.slice(0,2).join(" & ")}`, key:"interest", shared});
+    if(shared.length) r.push({t:`shared interest in ${shared.slice(0,2).join(" & ")}`, me:`we're both into ${shared.slice(0,2).join(" & ")}`, key:"interest", shared});
   }
-  if(person.track==="alumni") r.unshift({t:`${person.name.split(" ")[0]} is an AFE alum paying it forward`, key:"alum"});
+  if(person.track==="alumni") r.unshift({t:`${person.name.split(" ")[0]} is an AFE alum paying it forward`, me:`you're an AFE alum paying it forward`, key:"alum"});
   return r;
 }
 // A short opener for an in-app Orbit DM (used to seed a new conversation).
 function coffeeMessage(person){
   const reasons=connectionReasons(person);
   const meName=ME?.name?.split(" ")[0] || "there";
-  const hook=reasons.find(r=>r.key!=="alum")?.t || "we're both AFE interns this summer";
+  const hook=reasons.find(r=>r.key!=="alum")?.me || "we're both AFE interns this summer";
   const shared=reasons.find(r=>r.key==="interest")?.shared;
   const interestBit=shared?` — especially ${shared[0]}`:"";
   if(person.track==="alumni"){
     return `Hi ${person.name.split(" ")[0]}! I'm ${meName}, an AFE intern this summer. I saw you're an alum open to coffee chats${person.topics?` (would love to hear about ${person.topics[0]})`:""}. Any chance you'd be up for a 15-min virtual coffee this week? No pressure at all!`;
   }
-  return `Hi ${person.name.split(" ")[0]}! I saw ${hook}${interestBit}. I'm ${meName} — also figuring things out this summer. Up for a low-key 15-min coffee chat this week? Totally fine if not!`;
+  return `Hi ${person.name.split(" ")[0]}! Noticed ${hook}${interestBit}. I'm ${meName} — also figuring things out this summer. Up for a low-key 15-min coffee chat this week? Totally fine if not!`;
 }
-// Opens the person's real LinkedIn profile so the user can Connect / message there.
-function linkedinURL(person){ return `https://www.linkedin.com/in/${encodeURIComponent(person.linkedin)}`; }
-// A short note the user can copy into LinkedIn's connect/message box (300-char safe).
-function linkedinNote(person){
-  const reasons=connectionReasons(person);
-  const meName=ME?.name?.split(" ")[0] || "a fellow AFE";
-  const hook=reasons.find(r=>r.key!=="alum")?.t || "we're both AFE interns";
-  let note=`Hi ${person.name.split(" ")[0]}, I'm ${meName} — ${hook}. Would love to connect here on LinkedIn and maybe grab a quick coffee chat!`;
-  return note.length>300 ? note.slice(0,297)+"…" : note;
-}
+/* LinkedIn logic (normalizeLinkedIn, linkedinURL, linkedinNote, openLinkedIn)
+   lives in linkedin.js — loaded after this file. */
 
 /* ============================================================================
    SUPABASE CLIENT + MESSAGING ENGINE
@@ -293,7 +285,7 @@ function subscribeToMessages(){
         // DM keys are "dm:<a>:<b>" (sorted). Only handle if I'm a participant —
         // otherwise a client would ingest and display strangers' private DMs.
         const parts = msg.convo_key.slice(3).split(':');
-        if(!parts.includes(ME.id)) return;
+        if(!parts.includes(ME.id)) return;               // not my conversation — ignore
         const peerId = parts.find(id => id !== ME.id);
         if(!peerId) return;
         localKey = dmKey(peerId);
@@ -302,7 +294,7 @@ function subscribeToMessages(){
         // Only handle group messages for groups I've actually joined.
         const groupId = msg.convo_key.slice(4);
         const g = GROUPS.find(x=>x.id===groupId);
-        if(!g || !ME || !g.members.includes(ME.id)) return;
+        if(!g || !ME || !g.members.includes(ME.id)) return;  // not my group — ignore
         localKey = grpKey(groupId);
         ensureGroup(groupId);
       } else {
@@ -350,7 +342,7 @@ function openChat(key){
     <div class="chat-head">
       ${headAvatar}
       <div class="ct"><div class="t">${c.type==="group"?"☕ ":""}${esc(c.title)}</div><div class="s">${esc(sub)}</div></div>
-      ${c.type==="dm"?`<button class="btn sm linkedin" onclick="openLinkedIn('${c.peerId}')">in Connect</button>`:""}
+      ${c.type==="dm" && byId(c.peerId)?.linkedin ? `<button class="btn sm linkedin" onclick="openLinkedIn('${c.peerId}')"><span class="li-ic">in</span>Connect</button>`:""}
       <button class="x" onclick="closeChat()">×</button>
     </div>
     <div class="chat-body" id="chat-body"></div>
@@ -477,7 +469,7 @@ function renderCards(){
       ${reasons.length?`<div class="prompt">✨ <div><b>Why reach out:</b> ${reasons.slice(0,2).map(r=>r.t).join(", ")}.</div></div>`:""}
       <div class="actions">
         <button class="btn primary sm" data-act="message" data-id="${p.id}">💬 Message</button>
-        ${p.linkedin?`<button class="btn sm linkedin" data-act="linkedin" data-id="${p.id}">in Connect</button>`:""}
+        ${p.linkedin?`<button class="btn sm linkedin" data-act="linkedin" data-id="${p.id}"><span class="li-ic">in</span>Connect</button>`:""}
       </div>`;
     wrap.appendChild(card);
   }
@@ -491,7 +483,7 @@ function renderMap(){
   $("#count-bar-map").innerHTML=`<b>${list.length}</b> ${list.length===1?"AFE":"AFEs"} on the map · pins are approximate`;
   if(ME && ME.privacy.onMap){
     const j=jitter(ME.city, ME.id+"me");
-    if(j) L.marker([j.lat,j.lng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${esc(ME.city)}`);
+    if(j) L.marker([j.lat,j.lng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${esc(ME.city)}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile →</a>`);
   }
   for(const p of list){
     const j=jitter(p.city, p.id); if(!j) continue;
@@ -507,7 +499,7 @@ function renderMap(){
         ${reasons.length?`<div style="margin-top:6px;color:#0a7;font-size:12px">✨ ${reasons[0].t}</div>`:""}
         <div style="display:flex;gap:6px;margin-top:9px">
           <button onclick="startDM('${p.id}')" style="flex:1;padding:7px;border:none;border-radius:8px;background:linear-gradient(180deg,#ffb27a,#ff8a4c);color:#26140a;font-weight:800;cursor:pointer">💬 Message</button>
-          ${p.linkedin?`<button onclick="openLinkedIn('${p.id}')" style="padding:7px 10px;border:none;border-radius:8px;background:#0a66c2;color:#fff;font-weight:700;cursor:pointer">in</button>`:""}
+          ${p.linkedin?`<button onclick="openLinkedIn('${p.id}')" title="Connect on LinkedIn" style="padding:7px 10px;border:none;border-radius:8px;background:#0a66c2;color:#fff;font-weight:800;cursor:pointer">in</button>`:""}
         </div>
       </div>`);
   }
@@ -595,7 +587,7 @@ function matchCardHTML(p){
       <div class="why">${why.map(r=>`<span class="r">✨ ${r.t}</span>`).join("")}</div>
       <div class="cta">
         <button class="btn primary" onclick="startDM('${p.id}')">💬 Message ${esc(p.name.split(" ")[0])}</button>
-        ${p.linkedin?`<button class="btn linkedin" onclick="openLinkedIn('${p.id}')">in Connect on LinkedIn</button>`:""}
+        ${p.linkedin?`<button class="btn linkedin" onclick="openLinkedIn('${p.id}')"><span class="li-ic">in</span>Connect on LinkedIn</button>`:""}
       </div>
     </div>`;
 }
@@ -729,21 +721,7 @@ window.startDM=async function(peerId){
   openChat(c.key);
   if(!c.messages.length){ const input=$("#chat-input"); if(input){ input.value=coffeeMessage(p); input.focus(); input.select&&input.setSelectionRange(0,0); } }
 };
-window.openLinkedIn=function(peerId){
-  const p=byId(peerId); if(!p||!p.linkedin) return;
-  const note=linkedinNote(p);
-  showModal(`
-    <div class="m-head"><div class="btn linkedin" style="pointer-events:none;font-size:16px">in</div><h2>Connect on LinkedIn</h2><button class="x" onclick="closeModal()">×</button></div>
-    <div class="m-body">
-      <p class="muted">Opening <b>${esc(p.name)}</b>'s LinkedIn profile in a new tab. Hit <b>Connect</b> (or <b>Message</b>) there and paste this note:</p>
-      <div class="copyfield"><textarea id="li-note" style="min-height:110px">${esc(note)}</textarea></div>
-      <p class="muted" style="font-size:12px;margin-top:10px">🔗 <code>linkedin.com/in/${esc(p.linkedin)}</code> &nbsp;·&nbsp; <span style="color:var(--ink-faint)">Demo profiles use sample handles, so the page may not resolve to a real person.</span></p>
-    </div>
-    <div class="m-foot">
-      <button class="btn" onclick="copyText(document.getElementById('li-note').value)">📋 Copy note</button>
-      <button class="btn primary" onclick="window.open('${linkedinURL(p)}','_blank','noopener'); toast('Opening LinkedIn…')">in Open LinkedIn ↗</button>
-    </div>`);
-};
+/* window.openLinkedIn — provided by linkedin.js */
 
 /* ============================================================================
    MODALS
@@ -785,7 +763,45 @@ window.createGroup=async function(){
    PROFILE + PRIVACY (opt-in, safety layer) + photo upload
    ========================================================================== */
 function updateMeChip(){ const chip=$("#me-chip"); chip.innerHTML=ME?`${avatarHTML(ME,"av")} <span>${esc(ME.name.split(" ")[0])}</span>`:""; }
-$("#me-chip").addEventListener("click", ()=> ME && openProfile());
+$("#me-chip").addEventListener("click", ()=> ME && viewMyProfile());
+// One-click view of your own card — exactly what other AFEs see.
+window.viewMyProfile=function(){
+  if(!ME) return;
+  showModal(`
+    <div class="m-head"><h2>Your profile</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="m-body" style="text-align:center">
+      ${avatarHTML(ME,"av-xl")}
+      <div class="nm" style="font-size:20px;font-weight:800;margin-top:8px">${esc(ME.name)} <span class="track-badge ${ME.track}" style="vertical-align:middle">${trackLabel(ME.track)}</span></div>
+      <div class="role">${esc(ME.org||"")} ${ME.org?"·":""} ${ME.city==="Remote / Virtual"?"🌐 Virtual":esc(ME.city)} · 🕒 ${tzOf(ME.city)}</div>
+      <div class="role" style="margin-top:6px">🎓 ${esc(ME.school||"—")} · <span class="avail ${ME.avail}" style="vertical-align:middle">${availText(ME.avail)}</span></div>
+      ${(ME.interests||[]).length?`<div class="chips" style="justify-content:center;margin-top:10px">${ME.interests.map(i=>`<span class="chip on">${esc(i)}</span>`).join("")}</div>`:""}
+      <p class="muted" style="font-size:12px;margin-top:12px">👀 This is what other AFEs see on your card.</p>
+    </div>
+    <div class="m-foot">
+      <button class="btn danger" onclick="deleteMyAccount()" style="margin-right:auto">🗑 Delete account</button>
+      ${ME.linkedin?`<button class="btn linkedin" onclick="window.open(linkedinURL(ME),'_blank','noopener')"><span class="li-ic">in</span>View my LinkedIn</button>`:""}
+      <button class="btn primary" onclick="openProfile()">✏️ Edit profile</button>
+    </div>`);
+};
+// Permanently delete your account: your messages, group memberships, and profile
+// row are removed from Supabase, so your email can sign up fresh later (no dupes).
+window.deleteMyAccount=async function(){
+  if(!ME) return;
+  if(!confirm(`Delete your Orbit account?\n\nThis removes your profile, messages, and group memberships permanently. You can always join again later with the same email.`)) return;
+  try{
+    // Remove everything I sent (DMs + groups) AND both sides of my DM convos
+    // (convo_key contains my UUID for any DM I'm part of).
+    await db.from('messages').delete().or(`from_id.eq.${ME.id},convo_key.like.%${ME.id}%`);
+    await db.from('groups').update({created_by:null}).eq('created_by', ME.id); // detach groups we created
+    const { error } = await db.from('users').delete().eq('id', ME.id);       // group_members cascades
+    if(error){ console.error(error); toast("Couldn't delete your account — try again"); return; }
+    await db.auth.signOut().catch(()=>{});                                   // end OAuth session so auto-login doesn't recreate the account
+    ME=null; closeModal();
+    $("#app").classList.add("hidden"); $("#login").classList.remove("hidden");
+    const n=$("#lg-name"), em=$("#lg-email"); if(n) n.value=""; if(em) em.value="";
+    toast("Account deleted — safe travels 🛰️");
+  }catch(e){ console.error(e); toast("Couldn't delete your account — try again"); }
+};
 $("#btn-privacy").addEventListener("click", ()=> ME && openPrivacy());
 
 let PHOTO_DRAFT=null; // holds a data URL while editing
@@ -828,7 +844,7 @@ function profileFormHTML(heading, m, isOnboarding){
       </div>
       <div class="two-col">
         <label class="fld"><span class="lab">Email</span><input id="f-email" value="${esc(m?.email||'')}" placeholder="you@example.com"></label>
-        <label class="fld"><span class="lab">LinkedIn (optional)</span><input id="f-linkedin" value="${esc(m?.linkedin||'')}" placeholder="your-handle"></label>
+        <label class="fld"><span class="lab">LinkedIn (optional)</span><input id="f-linkedin" value="${esc(m?.linkedin||'')}" placeholder="profile URL or handle"></label>
       </div>
       <label class="fld"><span class="lab">Availability</span>
         <select id="f-avail">
@@ -865,10 +881,12 @@ window.refreshBuildingOptions=function(){
 
 window.saveProfile=async function(isOnboarding){
   const name=$("#f-name").value.trim(); if(!name){ toast("Add your name to continue"); return; }
+  const li=normalizeLinkedIn($("#f-linkedin").value);
+  if(li===null){ toast("That LinkedIn doesn't look right — paste your profile URL or just your handle"); $("#f-linkedin").focus(); return; }
   ME={
     ...ME,
     name, track:$("#f-track").value, city:$("#f-city").value, school:$("#f-school").value,
-    org:$("#f-org").value, building:$("#f-building").value.trim(), email:$("#f-email").value.trim(), linkedin:$("#f-linkedin").value.trim(),
+    org:$("#f-org").value, building:$("#f-building").value.trim(), email:$("#f-email").value.trim(), linkedin:li,
     avail:$("#f-avail").value, newToo:$("#f-new").value==="yes",
     interests:$$("#f-interests .chip.on").map(c=>c.dataset.i),
     photo:PHOTO_DRAFT || ME?.photo || null,
@@ -1002,6 +1020,13 @@ async function enterApp(){
   db.channel('users-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
       if(!ME) return;
+      if(payload.eventType === 'DELETE'){
+        // A user deleted their account — remove them from everyone's view.
+        const goneId = payload.old?.id; if(!goneId || goneId === ME.id) return;
+        const gi = PEOPLE.findIndex(p => p.id === goneId);
+        if(gi >= 0){ PEOPLE.splice(gi, 1); renderCards(); renderMap(); }
+        return;
+      }
       const user = { ...payload.new, newToo: payload.new.new_too, interests: payload.new.interests||[], topics: (payload.new.topics&&payload.new.topics.length)?payload.new.topics:undefined };
       if(user.id === ME.id){ ME = { ...user, privacy: user.privacy||ME.privacy||{...DEFAULT_PRIVACY} }; updateMeChip(); return; }
       const idx = PEOPLE.findIndex(p => p.id === user.id);
