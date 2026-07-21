@@ -470,7 +470,7 @@ function visiblePeople(){
 /* ============================================================================
    RENDER — cards / map / speed dating / groups
    ========================================================================== */
-function trackColor(t){ return t==="SDE"?"#5ea0ff": t==="HDE"?"#c58bff":"#ff8a4c"; }
+function trackColor(t){ return t==="SDE"?"#5ea0ff": t==="HDE"?"#cea968":"#ff8a4c"; }
 function trackLabel(t){ return t==="alumni"?"ALUM":t; }
 function availText(a){ return {coffee:"Open to coffee", dm:"Open to DMs", lunch:"Looking for lunch group", busy:"Busy this week"}[a]; }
 

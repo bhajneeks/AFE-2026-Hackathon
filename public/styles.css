@@ -1,9 +1,24 @@
+  /* Amazon Ember (brand typeface). Proprietary — no public CDN, so we resolve it
+     from the local system when present (all Amazon devices) and fall back to Inter. */
+  @font-face { font-family:"Amazon Ember"; font-weight:300; font-style:normal;
+    src:local("Amazon Ember Light"),local("AmazonEmber-Light"); }
+  @font-face { font-family:"Amazon Ember"; font-weight:400; font-style:normal;
+    src:local("Amazon Ember"),local("AmazonEmber-Regular"); }
+  @font-face { font-family:"Amazon Ember"; font-weight:500; font-style:normal;
+    src:local("Amazon Ember Medium"),local("AmazonEmber-Medium"); }
+  @font-face { font-family:"Amazon Ember"; font-weight:700; font-style:normal;
+    src:local("Amazon Ember Bold"),local("AmazonEmber-Bold"); }
+  @font-face { font-family:"Amazon Ember"; font-weight:800; font-style:normal;
+    src:local("Amazon Ember Heavy"),local("AmazonEmber-Heavy"); }
+  @font-face { font-family:"Amazon Ember"; font-weight:900; font-style:normal;
+    src:local("Amazon Ember Heavy"),local("AmazonEmber-Heavy"); }
+
   /* ---- Amazon Orbit — #ff9900 orange, black, blue #08aae3, cream #fff3dc ---- */
   :root {
     --bg:#fff3dc; --bg-soft:#fff8ed; --panel:#ffffff; --panel-2:#fff4df; --line:rgba(0,0,0,.10);
     --ink:#111820; --ink-dim:#4d453a; --ink-faint:#6c5d48;
     --accent:#ff9900; --accent-2:#e68a00; --cool:#08aae3; --cool-soft:rgba(45,191,248,.12);
-    --good:#13b57b; --warn:#f47a32; --sde:#08aae3; --hde:#9b59b6;
+    --good:#13b57b; --warn:#f47a32; --sde:#08aae3; --hde:#cea968;
     --glow1:#fff3dc; --glow2:#fff8ed;
     --overlay:rgba(255,255,255,.94);
     --topbar:rgba(255,255,255,.90);
@@ -13,15 +28,15 @@
     --radius:16px; --radius-sm:12px; --radius-pill:999px;
     --shadow:0 18px 45px rgba(0,0,0,.10); --shadow-sm:0 8px 20px rgba(0,0,0,.06);
     --ring:0 0 0 3px rgba(255,153,0,.35);
-    --font:"DM Sans","Avenir Next","Helvetica Neue",Arial,sans-serif;
-    --font-display:"DM Serif Display",Georgia,serif;
+    --font:"Amazon Ember","Inter","Helvetica Neue",Arial,sans-serif;
+    --font-display:"Amazon Ember","Inter","Helvetica Neue",Arial,sans-serif;
   }
   /* ---- Dark theme — deep navy ---- */
   :root[data-theme="dark"] {
     --bg:#111820; --bg-soft:#1a2230; --panel:#232f3e; --panel-2:#2a3a4e; --line:rgba(255,255,255,.12);
     --ink:#ffffff; --ink-dim:#ccd6e0; --ink-faint:#8b99aa;
     --accent:#ff9900; --accent-2:#ffad33; --cool:#2dbff8; --cool-soft:rgba(45,191,248,.14);
-    --good:#4ad9a4; --warn:#ffb74d; --sde:#2dbff8; --hde:#ce93d8;
+    --good:#4ad9a4; --warn:#ffb74d; --sde:#2dbff8; --hde:#dcc08f;
     --glow1:#111820; --glow2:#1a2230;
     --overlay:rgba(17,24,32,.96);
     --topbar:rgba(17,24,32,.92);
@@ -84,7 +99,7 @@
     background:
       radial-gradient(38vw 38vw at 22% 28%, rgba(255,138,76,.28), transparent 60%),
       radial-gradient(34vw 34vw at 78% 68%, rgba(99,164,255,.26), transparent 60%),
-      radial-gradient(30vw 30vw at 62% 18%, rgba(197,139,255,.20), transparent 60%);
+      radial-gradient(30vw 30vw at 62% 18%, rgba(206,169,104,.24), transparent 60%);
     filter:blur(20px); animation:auroraDrift 18s ease-in-out infinite alternate;
   }
   @keyframes auroraDrift {
@@ -117,7 +132,7 @@
   @keyframes corePulse { 0%,100% { transform:scale(1); box-shadow:0 0 22px rgba(255,138,76,.8),0 0 44px rgba(255,138,76,.4);} 50% { transform:scale(1.12); box-shadow:0 0 30px rgba(255,138,76,1),0 0 60px rgba(255,138,76,.55);} }
   .orbit-ring { position:absolute; inset:0; border-radius:50%; border:1.5px solid var(--cool); }
   .orbit-ring.r1 { inset:8px;  transform:rotateX(68deg) rotateZ(0deg);   border-color:rgba(99,164,255,.55); }
-  .orbit-ring.r2 { inset:28px; transform:rotateX(64deg) rotateZ(60deg);  border-color:rgba(197,139,255,.5); }
+  .orbit-ring.r2 { inset:28px; transform:rotateX(64deg) rotateZ(60deg);  border-color:rgba(206,169,104,.6); }
   .orbit-ring.r3 { inset:48px; transform:rotateX(70deg) rotateZ(-45deg); border-color:rgba(255,138,76,.5); }
   /* Each ring holds a spinner that carries a dot at its edge. */
   .orbit-spin { position:absolute; inset:0; border-radius:50%; transform-style:preserve-3d; }
@@ -326,7 +341,7 @@
   .card .sub { color:var(--ink-dim); font-size:13px; margin-top:2px; }
   .track-badge { font-size:10px; font-weight:800; letter-spacing:.6px; padding:2px 7px; border-radius:6px; }
   .track-badge.SDE { background:rgba(94,160,255,.16); color:var(--sde); }
-  .track-badge.HDE { background:rgba(197,139,255,.16); color:var(--hde); }
+  .track-badge.HDE { background:rgba(206,169,104,.18); color:var(--hde); }
   .track-badge.alumni { background:rgba(255,138,76,.16); color:var(--accent); }
   .avail { font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; }
   .avail::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
