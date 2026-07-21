@@ -1599,6 +1599,7 @@ function wireMapTools(){
 }
 // --- Google OAuth login ---
 async function signInWithGoogle(){
+  localStorage.removeItem("orbit-deleted");
   const { error } = await db.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.origin + window.location.pathname }
@@ -1609,6 +1610,12 @@ async function signInWithGoogle(){
 // After Google redirects back, load or create the user profile
 async function handleAuthSession(session){
   if(!session?.user) return;
+  // If account was recently deleted, don't recreate — sign out and stop
+  if(localStorage.getItem("orbit-deleted")){
+    localStorage.removeItem("orbit-deleted");
+    await db.auth.signOut().catch(()=>{});
+    return;
+  }
   const authUser = session.user;
   const email = authUser.email;
   const name = authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0];

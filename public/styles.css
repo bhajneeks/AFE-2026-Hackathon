@@ -730,12 +730,12 @@
     animation:obBgDrift 14s ease-in-out infinite alternate;
   }
   .ob-bg-card img { width:100%; height:100%; object-fit:cover; }
-  .ob-bgc-1 { width:240px; height:280px; top:6%; left:3%; transform:rotate(-4deg); animation-delay:0s; }
-  .ob-bgc-2 { width:220px; height:260px; top:8%; right:3%; transform:rotate(3deg); animation-delay:2s; }
-  .ob-bgc-3 { width:200px; height:240px; bottom:6%; left:5%; transform:rotate(2deg); animation-delay:4s; }
-  .ob-bgc-4 { width:260px; height:180px; bottom:10%; right:4%; transform:rotate(-2deg); animation-delay:6s; }
-  .ob-bgc-5 { width:210px; height:250px; top:10%; right:5%; transform:rotate(4deg); animation-delay:1s; }
-  .ob-bgc-6 { width:200px; height:230px; bottom:8%; left:6%; transform:rotate(-3deg); animation-delay:3s; }
+  .ob-bgc-1 { width:160px; height:190px; top:4%; left:2%; transform:rotate(-4deg); animation-delay:0s; }
+  .ob-bgc-2 { width:150px; height:180px; top:5%; right:2%; transform:rotate(3deg); animation-delay:2s; }
+  .ob-bgc-3 { width:140px; height:170px; bottom:4%; left:2%; transform:rotate(2deg); animation-delay:4s; }
+  .ob-bgc-4 { width:180px; height:130px; bottom:5%; right:2%; transform:rotate(-2deg); animation-delay:6s; }
+  .ob-bgc-5 { width:140px; height:170px; top:45%; right:2%; transform:rotate(4deg); animation-delay:1s; }
+  .ob-bgc-6 { width:130px; height:160px; top:40%; left:2%; transform:rotate(-3deg); animation-delay:3s; }
   @keyframes obBgDrift { 0% { transform:rotate(var(--r,0deg)) translateY(0); } 100% { transform:rotate(var(--r,0deg)) translateY(-18px); } }
   .ob-bgc-1 { --r:-5deg; } .ob-bgc-2 { --r:4deg; } .ob-bgc-3 { --r:3deg; } .ob-bgc-4 { --r:-2deg; } .ob-bgc-5 { --r:5deg; } .ob-bgc-6 { --r:-4deg; }
   :root[data-theme="dark"] .ob-bg-card { opacity:.18; }
