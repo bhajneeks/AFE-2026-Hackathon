@@ -938,8 +938,19 @@ async function handleAuthSession(session){
   const name = authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0];
   const photo = authUser.user_metadata?.avatar_url || null;
 
-  // Check if user exists in our users table
-  let { data: existingList } = await db.from('users').select('*').eq('email', email).limit(1);
+  // Check if user exists in our users table (handle duplicates)
+  let { data: existingList } = await db.from('users').select('*').eq('email', email);
+
+  if(existingList && existingList.length > 1){
+    // Clean up duplicates — keep the oldest, delete the rest
+    existingList.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+    const dupes = existingList.slice(1);
+    for(const dupe of dupes){
+      await db.from('users').delete().eq('id', dupe.id);
+    }
+    existingList = [existingList[0]];
+  }
+
   const existing = existingList && existingList.length > 0 ? existingList[0] : null;
 
   if(existing){
@@ -950,11 +961,12 @@ async function handleAuthSession(session){
       await db.from('users').update({ photo }).eq('id', ME.id);
     }
   } else {
-    const { data: created, error: createErr } = await db.from('users').insert({
+    // Use upsert to prevent duplicates on email
+    const { data: created, error: createErr } = await db.from('users').upsert({
       name, email, track: 'SDE', city: 'Seattle, WA', school: '', org: '', linkedin: '',
       avail: 'coffee', new_too: true, interests: [], bio: '', photo,
       privacy: { onMap:true, city:true, office:true, school:true, interests:true, linkedin:true, email:true, availability:true }
-    }).select().single();
+    }, { onConflict: 'email' }).select().single();
     if(createErr){ console.error('Create user error:', createErr); return; }
     ME = { ...created, newToo: created.new_too, interests: created.interests||[], privacy: created.privacy||{...DEFAULT_PRIVACY} };
   }
