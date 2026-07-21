@@ -804,28 +804,48 @@ function initMap(){
   markerLayer=L.layerGroup().addTo(map);
   renderMap();
 }
-async function doLogin(){
-  const name=$("#lg-name").value.trim(), email=$("#lg-email").value.trim();
-  const err=$("#lg-err");
-  if(!name){ err.textContent="What should we call you?"; return; }
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ err.textContent="Enter a valid email so peers can reach you."; return; }
-  err.textContent="";
+// --- Google OAuth login ---
+async function signInWithGoogle(){
+  const { error } = await db.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin + window.location.pathname }
+  });
+  if(error){ console.error('Google sign-in error:', error); $("#lg-err").textContent="Sign-in failed, try again."; }
+}
 
-  // Check if user exists by email
+// After Google redirects back, load or create the user profile
+async function handleAuthSession(session){
+  if(!session?.user) return;
+  const authUser = session.user;
+  const email = authUser.email;
+  const name = authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0];
+  const photo = authUser.user_metadata?.avatar_url || null;
+
+  // Check if user exists in our users table
   let { data: existingList } = await db.from('users').select('*').eq('email', email).limit(1);
   const existing = existingList && existingList.length > 0 ? existingList[0] : null;
+
   if(existing){
     ME = { ...existing, newToo: existing.new_too, interests: existing.interests||[] };
+    // Update photo from Google if they don't have one
+    if(!ME.photo && photo){
+      ME.photo = photo;
+      await db.from('users').update({ photo }).eq('id', ME.id);
+    }
   } else {
-    // Create new user
     const { data: created, error: createErr } = await db.from('users').insert({
       name, email, track: 'SDE', city: 'Seattle, WA', school: '', org: '', linkedin: '',
-      avail: 'coffee', new_too: true, interests: [], bio: '', photo: null,
+      avail: 'coffee', new_too: true, interests: [], bio: '', photo,
       privacy: { onMap:true, city:true, office:true, school:true, interests:true, linkedin:true, email:true, availability:true }
     }).select().single();
-    if(createErr){ console.error('Create user error:', createErr); err.textContent="Something went wrong, try again."; return; }
+    if(createErr){ console.error('Create user error:', createErr); return; }
     ME = { ...created, newToo: created.new_too, interests: created.interests||[] };
   }
+
+  await enterApp();
+}
+
+async function enterApp(){
   const isNew = !ME.school && !ME.org;
 
   // Load all users
@@ -865,13 +885,24 @@ async function doLogin(){
     showModal(profileFormHTML("Welcome to Orbit 🛰️", ME, true));
   }
 }
-$("#lg-go").addEventListener("click", doLogin);
-$("#lg-email").addEventListener("keydown", e=>{ if(e.key==="Enter") doLogin(); });
-$("#lg-name").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#lg-email").focus(); });
 
-function boot(){
+$("#lg-google").addEventListener("click", signInWithGoogle);
+
+async function boot(){
   buildFilterChips();
   wireFilters(); wireTabs();
-  $("#lg-name").focus();
+
+  // Check if user is already logged in (session persists)
+  const { data: { session } } = await db.auth.getSession();
+  if(session){
+    await handleAuthSession(session);
+  }
+
+  // Listen for auth state changes (handles redirect back from Google)
+  db.auth.onAuthStateChange(async (event, session) => {
+    if(event === 'SIGNED_IN' && session && !ME){
+      await handleAuthSession(session);
+    }
+  });
 }
 document.addEventListener("DOMContentLoaded", boot);
