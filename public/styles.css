@@ -302,9 +302,7 @@
 
   .card { background:linear-gradient(180deg,var(--panel),var(--bg-soft)); border:1px solid var(--line); border-radius:var(--radius); padding:20px; position:relative; overflow:hidden;
     transition:transform .32s cubic-bezier(.34,1.56,.64,1), border-color .2s ease, box-shadow .28s cubic-bezier(.34,1.56,.64,1); }
-  .card::before { content:""; position:absolute; inset:0 0 auto 0; height:3px; background:linear-gradient(90deg,var(--accent),var(--cool)); opacity:0; transition:opacity .18s ease; }
   .card:hover { transform:translateY(-5px) scale(1.01); border-color:var(--cool); box-shadow:0 12px 32px rgba(0,0,0,.12), 0 4px 12px rgba(8,170,227,.08); }
-  .card:hover::before { opacity:.9; }
   .card .top { display:flex; gap:12px; align-items:center; }
   .card .name { font-family:var(--font-display); font-weight:700; font-size:16.5px; letter-spacing:-.2px; display:flex; align-items:center; gap:8px; }
   .card .sub { color:var(--ink-dim); font-size:13px; margin-top:2px; }
