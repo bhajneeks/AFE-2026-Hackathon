@@ -1058,4 +1058,22 @@ async function boot(){
     }
   });
 }
-document.addEventListener("DOMContentLoaded", boot);
+// A11y: make clickable non-button elements (chips, conversation rows, me-chip)
+// keyboard-operable — Enter/Space triggers a click. They also get tabindex/role
+// applied lazily so they're reachable and announced.
+function makeClickableAccessible(){
+  $$(".chip, .conv, .me-chip, .theme-toggle").forEach(el=>{
+    if(el.tagName==="BUTTON") return;
+    if(!el.hasAttribute("tabindex")) el.setAttribute("tabindex","0");
+    if(!el.hasAttribute("role")) el.setAttribute("role","button");
+  });
+}
+document.addEventListener("keydown", e=>{
+  const el=e.target.closest(".chip, .conv, .me-chip");
+  if(el && (e.key==="Enter"||e.key===" ")){ e.preventDefault(); el.click(); }
+});
+// Re-apply after any render that injects chips/rows.
+const _origRenderAll = renderAll;
+renderAll = function(){ _origRenderAll(); makeClickableAccessible(); };
+
+document.addEventListener("DOMContentLoaded", ()=>{ boot(); makeClickableAccessible(); });
