@@ -1052,7 +1052,11 @@ function setMapTiles(theme){
   tileLayer.bringToBack();
 }
 function initMap(){
-  map=L.map("map",{ zoomControl:true, attributionControl:false }).setView([44,-100],4);
+  // worldCopyJump keeps pins + heatmap visible in every horizontal "copy" of the
+  // world as you pan (like Google/Apple Maps) instead of scrolling into endless
+  // empty repeats. minZoom:2 stops the map zooming out so far you see many copies
+  // stacked side by side at once.
+  map=L.map("map",{ zoomControl:true, attributionControl:false, worldCopyJump:true, minZoom:2 }).setView([44,-100],4);
   map.zoomControl.setPosition("topright");
   setMapTiles(currentTheme());
   markerLayer=L.layerGroup().addTo(map);
