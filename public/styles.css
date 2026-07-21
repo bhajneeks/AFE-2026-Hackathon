@@ -273,6 +273,7 @@
   .chip:hover { border-color:var(--cool); color:var(--ink); }
   .chip.on { background:var(--sel-cool-bg); border-color:var(--cool); color:var(--on-cool); font-weight:700; }
   .chip.on.accent { background:var(--accent-tint); border-color:var(--accent); color:var(--on-accent); }
+  .interest-cloud .chip { text-transform:capitalize; }
   .interest-cloud .chip.on { background:var(--sel-good-bg); border-color:var(--good); color:var(--on-good); font-weight:700; }
   .filter-reset { margin-top:14px; width:100%; padding:9px; border-radius:10px; border:1px dashed var(--line); background:transparent; color:var(--ink-faint); font-size:13px; font-weight:600; }
   .filter-reset:hover { color:var(--ink); border-color:var(--ink-faint); }
@@ -366,7 +367,7 @@
   .avail.lunch { background:rgba(255,207,92,.14); color:var(--warn); }
   .avail.busy { background:var(--busy-bg); color:var(--ink-faint); }
   .card .meta { margin-top:12px; display:flex; flex-wrap:wrap; gap:6px; }
-  .tag { font-size:11.5px; font-weight:600; padding:4px 11px; border-radius:999px; background:var(--bg); border:1px solid var(--line); color:var(--ink-dim); }
+  .tag { font-size:11.5px; font-weight:600; padding:4px 11px; border-radius:999px; background:var(--bg); border:1px solid var(--line); color:var(--ink-dim); text-transform:capitalize; }
   .tag.match { background:var(--sel-good-bg); border-color:var(--good); color:var(--on-good); font-weight:600; }
   .prompt { margin-top:13px; font-size:12.5px; line-height:1.5; color:var(--accent-2); background:rgba(255,153,0,.10); border:1.5px solid rgba(255,153,0,.22); padding:10px 12px; border-radius:13px; display:flex; gap:8px; align-items:flex-start; }
   .prompt b { color:var(--accent-2); }
@@ -471,9 +472,11 @@
     box-shadow:0 2px 4px rgba(0,0,0,.02), 0 6px 18px rgba(0,0,0,.05), 0 0 0 1px rgba(0,0,0,.04);
     transition:transform .32s cubic-bezier(.16,1,.3,1), box-shadow .28s ease; animation:cardIn .5s cubic-bezier(.16,1,.3,1) both; }
   .group-card::after { content:""; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--accent),var(--accent-2)); transform:scaleX(0); transform-origin:left; transition:transform .3s cubic-bezier(.16,1,.3,1); }
-  /* Alignment: pin the action row to the card bottom so buttons/counts line up
-     across cards regardless of description length or member count. */
-  .group-card > div:last-child { margin-top:auto; padding-top:8px; }
+  /* Alignment: anchor the bottom block (members row + action row) together so
+     avatars, "N members", and buttons line up across cards regardless of
+     description length or member count. */
+  .group-card > div:nth-last-child(2) { margin-top:auto; }
+  .group-card > div:last-child { padding-top:8px; }
   .group-card:nth-child(2) { animation-delay:.06s; }
   .group-card:nth-child(3) { animation-delay:.12s; }
   .group-card:nth-child(4) { animation-delay:.18s; }
@@ -487,7 +490,7 @@
   .invite-flag { align-self:flex-start; background:var(--accent); color:#26140a; font-size:11px; font-weight:800; letter-spacing:.4px; padding:3px 10px; border-radius:999px; }
   .group-card .emoji { font-size:28px; }
   .group-card .title { font-family:var(--font-display); font-weight:700; font-size:16px; letter-spacing:-.02em; }
-  .group-card .members { display:flex; align-items:center; }
+  .group-card .members { display:flex; align-items:center; min-height:26px; }
   .group-card .members .av { width:26px; height:26px; font-size:11px; border:2px solid var(--panel); margin-left:-7px; }
   .group-card .members .av:first-child { margin-left:0; }
 

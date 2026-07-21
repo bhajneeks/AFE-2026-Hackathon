@@ -1032,7 +1032,11 @@ function wireSidebarResize(){
 /* ============================================================================
    THE VAULT — letters, memories & milestones left for the next cohort.
    Backed by the vault_posts table (type: memory | time_capsule | milestone | story).
+   Feature-flagged OFF by default (team decision 7/21) — flip SHOW_VAULT to true
+   to bring back the tab. All code and the DB table remain fully functional.
    ========================================================================== */
+const SHOW_VAULT=false;
+if(!SHOW_VAULT){ const b=document.querySelector('#tabs [data-view="vault"]'); if(b) b.style.display="none"; }
 const VAULT_TYPES={
   time_capsule:{emoji:"✉️", label:"Letter to next cohort"},
   memory:{emoji:"💭", label:"Memory"},
