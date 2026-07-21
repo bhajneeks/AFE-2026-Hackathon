@@ -1716,6 +1716,13 @@ function locateMe(e){
     pos=>{ const {latitude:lat,longitude:lng,accuracy}=pos.coords;
       saveCachedLocation({lat,lng,accuracy,ts:Date.now()});
       showLocation(lat,lng,accuracy);
+      // Update profile city to nearest hub
+      const hub = nearestHub(lat, lng);
+      if(hub && ME && hub !== ME.city){
+        ME.city = hub;
+        db.from('users').update({ city: hub }).eq('id', ME.id).then(()=>{}, ()=>{});
+        updateMeChip();
+      }
       done();
     },
     err=>{
@@ -2043,13 +2050,19 @@ function enablePinDrop(){
     saveCachedLocation({lat:latlng.lat, lng:latlng.lng, accuracy:500, ts:Date.now()});
     overlay.remove();
     disablePinDrop();
+    // Update profile city to nearest hub so it reflects on the profile view
+    const hub = nearestHub(latlng.lat, latlng.lng);
+    if(hub && ME && hub !== ME.city){
+      ME.city = hub;
+      db.from('users').update({ city: hub }).eq('id', ME.id).then(()=>{}, e=>console.error('city update failed:', e));
+    }
     // Clear old pin indicator before re-rendering
     if(pinLayer) pinLayer.clearLayers();
     // Re-render map so your face pin moves to the new location
-    renderMap();
+    renderAll();
     // Fly to the dropped location
     map.flyTo([latlng.lat, latlng.lng], 11, {duration:.9});
-    toast("Pin saved");
+    toast(`Pin saved · ${hub||ME.city}`);
   }, {once:true});
 }
 
