@@ -372,7 +372,7 @@ function openChat(key){
     <div class="chat-head">
       ${headAvatar}
       <div class="ct"><div class="t">${c.type==="group"?"":""}${esc(c.title)}</div><div class="s">${esc(sub)}</div></div>
-      ${c.type==="dm" && byId(c.peerId)?.linkedin ? `<button class="btn sm linkedin" onclick="openLinkedIn('${c.peerId}')"><span class="li-ic">in</span>Connect</button>`:""}
+      ${c.type==="dm" && byId(c.peerId)?.linkedin && shows(byId(c.peerId),"linkedin") ? `<button class="btn sm linkedin" onclick="openLinkedIn('${c.peerId}')"><span class="li-ic">in</span>Connect</button>`:""}
       ${c.type==="group"?`<button class="btn sm" onclick="addMemberToGroup('${c.groupId}')">Add member</button><button class="btn sm danger" onclick="leaveGroup('${c.groupId}')">Leave</button>`:""}
       <button class="x" onclick="closeChat()">×</button>
     </div>
@@ -621,7 +621,7 @@ function renderMap(){
     let myLat, myLng;
     if(cached){ myLat=cached.lat; myLng=cached.lng; }
     else { const j=jitter(ME.city, ME.id+"me"); if(j){ myLat=j.lat; myLng=j.lng; } }
-    if(myLat!=null) L.marker([myLat,myLng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${cached?"Pinned location":"${esc(ME.city)}"}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile</a>`);
+    if(myLat!=null) L.marker([myLat,myLng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${cached?"Pinned location":esc(ME.city)}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile</a>`);
   }
   for(const p of list){
     const j=jitter(p.city, p.id); if(!j) continue;
@@ -739,7 +739,7 @@ function swipeCardHTML(p, i){
         </div>
         <div class="sc-section">
           <div class="sc-label">Why you'll click</div>
-          <div class="why">${why.map(r=>`<span class="r">${r.t}</span>`).join("")}</div>
+          <div class="why">${why.slice(0,4).map(r=>`<span class="r">${r.t}</span>`).join("")}</div>
         </div>
         ${interests.length&&shows(p,"interests")?`
         <div class="sc-section">
@@ -1030,6 +1030,126 @@ function wireSidebarResize(){
 }
 
 /* ============================================================================
+   THE VAULT — letters, memories & milestones left for the next cohort.
+   Backed by the vault_posts table (type: memory | time_capsule | milestone | story).
+   ========================================================================== */
+const VAULT_TYPES={
+  time_capsule:{emoji:"✉️", label:"Letter to next cohort"},
+  memory:{emoji:"💭", label:"Memory"},
+  milestone:{emoji:"🏆", label:"Milestone"},
+  story:{emoji:"📖", label:"Story"},
+};
+let VAULT_POSTS=[];
+// Vault moderators — project contributors who can remove any post (spam/abuse cleanup).
+// Add teammates' Google-login emails here.
+const VAULT_ADMINS=["elias.assalif14@gmail.com"];
+const isVaultAdmin=()=>!!ME && VAULT_ADMINS.includes((ME.email||"").toLowerCase());
+window.deleteVaultPost=async function(postId){
+  if(!isVaultAdmin()) return;
+  if(!confirm("Remove this letter from the Vault permanently?")) return;
+  // Note: RLS silently ignores deletes with no DELETE policy — so verify the row is gone.
+  const { data, error } = await db.from('vault_posts').delete().eq('id', postId).select();
+  if(error || !data || !data.length){
+    console.error('vault delete blocked (missing DELETE policy?):', error);
+    toast("Couldn't delete — run the DELETE policy SQL in Supabase");
+    return;
+  }
+  toast("Letter removed");
+  renderVault();
+};
+async function loadVault(){
+  const { data, error } = await db.from('vault_posts')
+    .select('*, users(name, photo, track)')
+    .order('created_at', {ascending:false})
+    .limit(100);
+  if(error){ console.error('vault load:', error); return; }
+  VAULT_POSTS=data||[];
+}
+async function renderVault(){
+  await loadVault();
+  renderVaultCards();
+}
+function renderVaultCards(){
+  const wall=$("#vault-wall"); if(!wall) return;
+  if(!VAULT_POSTS.length){
+    wall.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="big">✉️</div>
+      The Vault is empty — be the first to leave something behind for next summer's AFEs.</div>`;
+    return;
+  }
+  wall.innerHTML=VAULT_POSTS.map(p=>{
+    const t=VAULT_TYPES[p.type]||VAULT_TYPES.memory;
+    const isAnon=!p.user_id;
+    const author=isAnon ? {name:"Anonymous AFE", photo:null, track:"SDE"} : (p.users||{name:"A past AFE", photo:null, track:"SDE"});
+    const mineToEdit=ME && p.user_id===ME.id;
+    const when=new Date(p.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric"});
+    const rx=p.reactions||{};
+    const mine=id=>ME && (rx[id]||[]).includes(ME.id);
+    const rxBtns=["❤️","🙌","🔥"].map(e=>{
+      const n=(rx[e]||[]).length;
+      return `<button class="vault-rx ${mine(e)?'on':''}" onclick="reactVault('${p.id}','${e}')">${e}${n?` ${n}`:""}</button>`;
+    }).join("");
+    return `<div class="card vault-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div class="vault-type">${t.emoji} ${esc(t.label)}</div>
+        <div style="display:flex;gap:4px">
+          ${mineToEdit?`<button class="vault-rx" title="Edit your letter" onclick="openVaultComposer('${p.id}')">✏️</button>`:""}
+          ${isVaultAdmin()?`<button class="vault-rx" title="Remove (moderator)" onclick="deleteVaultPost('${p.id}')">🗑</button>`:""}
+        </div>
+      </div>
+      <p class="vault-caption">${esc(p.caption)}</p>
+      <div class="vault-foot">
+        <div class="vault-author">${isAnon?`<span class="av" style="display:grid;place-items:center;background:var(--panel-2);color:var(--ink-dim)">?</span>`:avatarHTML(author,"av")}<span>${esc(author.name)}</span><span class="muted">· ${when}</span></div>
+        <div class="vault-rxs">${rxBtns}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+window.reactVault=async function(postId, emoji){
+  if(!ME) return;
+  const p=VAULT_POSTS.find(x=>x.id===postId); if(!p) return;
+  const rx={...(p.reactions||{})};
+  const list=new Set(rx[emoji]||[]);
+  list.has(ME.id)?list.delete(ME.id):list.add(ME.id);
+  rx[emoji]=[...list];
+  p.reactions=rx;                                        // optimistic
+  renderVaultCards();
+  await db.from('vault_posts').update({reactions:rx}).eq('id', postId);
+};
+$("#new-vault-post").addEventListener("click", ()=> openVaultComposer());
+window.openVaultComposer=function(editId){
+  if(!ME) return;
+  const editing=editId ? VAULT_POSTS.find(x=>x.id===editId) : null;
+  showModal(`
+    <div class="m-head"><h2>${editing?"✏️ Edit your letter":"✉️ Leave something behind"}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="m-body">
+      <p class="muted" style="margin-top:0">Next summer's AFEs will read this on day one. What do you wish someone had told you?</p>
+      <label class="fld"><span class="lab">Type</span>
+        <select id="v-type">${Object.entries(VAULT_TYPES).map(([k,t])=>`<option value="${k}" ${editing?.type===k?"selected":""}>${t.emoji} ${t.label}</option>`).join("")}</select></label>
+      <label class="fld"><span class="lab">Your words</span>
+        <textarea id="v-caption" style="width:100%;min-height:120px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:14px;font-family:var(--font)" placeholder="e.g. Week 2 I was sure I was behind — I wasn't. Ask your mentor the 'dumb' question. It's never dumb.">${editing?esc(editing.caption):""}</textarea></label>
+      ${editing?"":`<label class="fld" style="display:flex;align-items:center;gap:10px;cursor:pointer"><input type="checkbox" id="v-anon" style="width:auto"> <span>Post anonymously <span class="muted" style="font-size:12px">(can't be edited later — no name attached)</span></span></label>`}
+    </div>
+    <div class="m-foot"><button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveVaultPost(${editing?`'${editing.id}'`:""})">${editing?"Save changes":"Leave it in the Vault"}</button></div>`);
+};
+window.saveVaultPost=async function(editId){
+  const caption=$("#v-caption")?.value.trim();
+  if(!caption){ toast("Write a little something first"); return; }
+  if(editId){
+    const { error } = await db.from('vault_posts').update({ type: $("#v-type").value, caption }).eq('id', editId).eq('user_id', ME.id);
+    if(error){ console.error(error); toast("Couldn't save — try again"); return; }
+    toast("Letter updated ✓");
+  } else {
+    const anon=$("#v-anon")?.checked;
+    const { error } = await db.from('vault_posts').insert({ user_id: anon?null:ME.id, type: $("#v-type").value, caption });
+    if(error){ console.error(error); toast("Couldn't save — try again"); return; }
+    toast(anon?"Added anonymously ✉️":"Added to the Vault ✉️");
+  }
+  closeModal();
+  renderVault();
+};
+
+/* ============================================================================
    TABS
    ========================================================================== */
 function wireTabs(){
@@ -1042,6 +1162,7 @@ function wireTabs(){
     if(state.view==="map" && map) setTimeout(()=>map.invalidateSize(),60);
     if(state.view==="speed") renderSpeed();
     if(state.view==="messages") renderInbox();
+    if(state.view==="vault") renderVault();
   });
 }
 
@@ -1331,6 +1452,13 @@ window.pickBuilding=function(code){
 document.addEventListener("click", e=>{
   const panel=$("#building-suggest");
   if(panel && !e.target.closest("#f-building") && !e.target.closest("#building-suggest")) panel.classList.remove("open");
+});
+// Escape closes things in intuitive order: suggestion panel first, then modal/chat.
+document.addEventListener("keydown", e=>{
+  if(e.key!=="Escape") return;
+  const panel=$("#building-suggest");
+  if(panel && panel.classList.contains("open")){ panel.classList.remove("open"); return; }
+  if($("#modal-back")?.classList.contains("open")) closeModal();
 });
 function currentBuildingValue(){ return $("#f-building")?.value.trim()||""; }
 
