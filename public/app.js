@@ -622,10 +622,6 @@ function renderSpeed(){
       <div class="swipe-deck" id="swipe-deck">
         ${deck.slice(0,3).map((r,i)=>swipeCardHTML(r.p,r.s,i)).join("")}
       </div>
-      <div class="swipe-actions">
-        <button class="swipe-btn no"  id="swipe-no"  aria-label="Pass" title="Pass (←)">✕</button>
-        <button class="swipe-btn yes" id="swipe-yes" aria-label="Connect &amp; message" title="Connect &amp; message (→)">✉</button>
-      </div>
       <div class="swipe-hint muted">${deck.length} ${deck.length===1?"person":"people"} to meet</div>
     `:`<div class="empty" style="text-align:center;padding:40px 0">
         <div class="big" style="font-size:32px">You're all caught up ✨</div>
@@ -672,6 +668,10 @@ function swipeCardHTML(p, score, i){
           <div class="sc-label">Into</div>
           <div class="sc-interests">${interests.map(x=>`<span class="tag ${sharedSet.has(x)?'match':''}">${sharedSet.has(x)?'★ ':''}${esc(x)}</span>`).join("")}</div>
         </div>`:""}
+      </div>
+      <div class="sc-actions">
+        <button class="swipe-btn no"  data-swipe="no"  aria-label="Pass" title="Pass (←)">✕</button>
+        <button class="swipe-btn yes" data-swipe="yes" aria-label="Connect &amp; message" title="Connect &amp; message (→)">✉</button>
       </div>
     </div>`;
 }
@@ -730,8 +730,13 @@ function wireSwipe(){
   };
   if(card){ card.addEventListener("mousedown",onDown); card.addEventListener("touchstart",onDown,{passive:true}); }
 
-  $("#swipe-yes").onclick=()=>{ dx=THRESHOLD+1; flingOff(1); };
-  $("#swipe-no").onclick =()=>{ dx=-(THRESHOLD+1); flingOff(-1); };
+  // Action buttons live on the top card; delegate so only it responds.
+  deck.addEventListener("click", e=>{
+    const b=e.target.closest("[data-swipe]"); if(!b) return;
+    if(!b.closest(".swipe-card[data-i='0']")) return;
+    if(b.dataset.swipe==="yes"){ dx=THRESHOLD+1; flingOff(1); }
+    else { dx=-(THRESHOLD+1); flingOff(-1); }
+  });
 }
 window.resetDeck=function(){
   localStorage.removeItem("orbit-skipped");
