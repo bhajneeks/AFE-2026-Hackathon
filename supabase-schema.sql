@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   linkedin TEXT DEFAULT '',
   avail TEXT DEFAULT 'coffee',
   new_too BOOLEAN DEFAULT true,
+  building TEXT DEFAULT '',
   interests TEXT[] DEFAULT '{}',
   topics TEXT[] DEFAULT '{}',
   bio TEXT DEFAULT '',
