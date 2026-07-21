@@ -1457,17 +1457,10 @@ function locateMe(e){
   if(btn){ btn.classList.add("locating"); btn.textContent="Locating..."; }
   const done=()=>{ if(btn){ btn.classList.remove("locating"); btn.textContent="Locate me"; } };
   navigator.geolocation.getCurrentPosition(
-    async pos=>{ const {latitude:lat,longitude:lng,accuracy}=pos.coords;
+    pos=>{ const {latitude:lat,longitude:lng,accuracy}=pos.coords;
       saveCachedLocation({lat,lng,accuracy,ts:Date.now()});
       showLocation(lat,lng,accuracy);
       done();
-      // Update city to nearest hub
-      const hub = nearestHub(lat, lng);
-      if(hub && ME && ME.city !== hub){
-        ME.city = hub;
-        await db.from('users').update({ city: hub }).eq('id', ME.id);
-        renderAll();
-      }
     },
     err=>{
       done();
@@ -1746,21 +1739,12 @@ function enablePinDrop(){
   toast("Tap the map to set your location");
 
   // One-time click handler on the map
-  map.once("click", async function(e){
+  map.once("click", function(e){
     const {lat, lng} = e.latlng;
     saveCachedLocation({lat, lng, accuracy:500, ts:Date.now()});
     showLocation(lat, lng, 500);
     disablePinDrop();
-    // Update user's city to nearest hub
-    const hub = nearestHub(lat, lng);
-    if(hub && ME){
-      ME.city = hub;
-      await db.from('users').update({ city: hub }).eq('id', ME.id);
-      renderAll();
-      toast(`Location set — nearest hub: ${hub}`);
-    } else {
-      toast("Location pinned");
-    }
+    toast("Location pinned");
   });
 }
 
