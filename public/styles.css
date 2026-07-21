@@ -434,8 +434,6 @@
   .swipe-btn:active { transform:scale(.9); }
   .swipe-btn.no    { color:var(--ink-dim); }
   .swipe-btn.no:hover    { border-color:var(--ink-dim); box-shadow:0 8px 22px rgba(0,0,0,.14); }
-  .swipe-btn.info  { width:50px; height:50px; font-size:19px; color:var(--cool); }
-  .swipe-btn.info:hover  { border-color:var(--cool); box-shadow:0 8px 22px rgba(8,170,227,.2); }
   .swipe-btn.yes   { color:var(--accent); border-color:var(--accent-tint); }
   .swipe-btn.yes:hover   { border-color:var(--accent); box-shadow:0 8px 22px rgba(255,153,0,.28); }
   .swipe-hint { text-align:center; font-size:12.5px; margin-top:6px; }

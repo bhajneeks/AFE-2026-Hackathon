@@ -624,8 +624,7 @@ function renderSpeed(){
       </div>
       <div class="swipe-actions">
         <button class="swipe-btn no"  id="swipe-no"  aria-label="Pass" title="Pass (←)">✕</button>
-        <button class="swipe-btn info" id="swipe-msg" aria-label="Message" title="Message">✉</button>
-        <button class="swipe-btn yes" id="swipe-yes" aria-label="Connect" title="Connect (→)">♥</button>
+        <button class="swipe-btn yes" id="swipe-yes" aria-label="Connect &amp; message" title="Connect &amp; message (→)">✉</button>
       </div>
       <div class="swipe-hint muted">${deck.length} ${deck.length===1?"person":"people"} to meet</div>
     `:`<div class="empty" style="text-align:center;padding:40px 0">
@@ -713,7 +712,6 @@ function wireSwipe(){
 
   $("#swipe-yes").onclick=()=>{ dx=THRESHOLD+1; flingOff(1); };
   $("#swipe-no").onclick =()=>{ dx=-(THRESHOLD+1); flingOff(-1); };
-  $("#swipe-msg").onclick=()=>{ const c=topCard(); if(c) startDM(c.dataset.id); };
 }
 window.resetDeck=function(){
   localStorage.removeItem("orbit-skipped");
