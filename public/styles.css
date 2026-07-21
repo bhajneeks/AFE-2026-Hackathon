@@ -441,7 +441,7 @@
   .swipe-btn { width:60px; height:60px; border-radius:50%; border:2px solid var(--line); background:var(--panel);
     display:grid; place-items:center; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.08);
     transition:transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s ease, border-color .15s ease, color .15s ease; }
-  .swipe-btn svg { width:28px; height:28px; display:block; }
+  .swipe-btn svg { width:30px; height:30px; display:block; }
   .swipe-btn:hover { transform:translateY(-3px) scale(1.06); }
   .swipe-btn:active { transform:scale(.9); }
   .swipe-btn.no    { color:var(--ink-dim); }
