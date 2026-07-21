@@ -355,7 +355,7 @@ function openChat(key){
       ${headAvatar}
       <div class="ct"><div class="t">${c.type==="group"?"":""}${esc(c.title)}</div><div class="s">${esc(sub)}</div></div>
       ${c.type==="dm" && byId(c.peerId)?.linkedin ? `<button class="btn sm linkedin" onclick="openLinkedIn('${c.peerId}')"><span class="li-ic">in</span>Connect</button>`:""}
-      ${c.type==="group"?`<button class="btn sm danger" onclick="leaveGroup('${c.groupId}')">Leave</button>`:""}
+      ${c.type==="group"?`<button class="btn sm" onclick="addMemberToGroup('${c.groupId}')">Add member</button><button class="btn sm danger" onclick="leaveGroup('${c.groupId}')">Leave</button>`:""}
       <button class="x" onclick="closeChat()">×</button>
     </div>
     <div class="chat-body" id="chat-body"></div>
@@ -378,6 +378,32 @@ function openChat(key){
   renderChatBody(); setTimeout(()=>input.focus(),50);
 }
 function closeChat(){ OPEN_CHAT=null; $("#modal").className="modal"; closeModal(); }
+window.addMemberToGroup=function(gid){
+  const g=GROUPS.find(x=>x.id===gid); if(!g) return;
+  const nonMembers=PEOPLE.filter(p=>!g.members.includes(p.id));
+  if(!nonMembers.length){ toast("Everyone is already in this group"); return; }
+  showModal(`
+    <div class="m-head"><h2>Add member</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="m-body">
+      <p class="muted" style="margin-bottom:12px">Select someone to add to "${esc(g.title)}"</p>
+      <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+        ${nonMembers.slice(0,20).map(p=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);cursor:pointer" onclick="confirmAddMember('${gid}','${p.id}')">
+            ${avatarHTML(p,"av")}
+            <div><strong>${esc(p.name)}</strong><br><span class="muted" style="font-size:12px">${esc(p.city)}</span></div>
+          </div>`).join("")}
+      </div>
+    </div>`);
+};
+window.confirmAddMember=async function(gid,uid){
+  const g=GROUPS.find(x=>x.id===gid); if(!g) return;
+  const p=byId(uid); if(!p) return;
+  const { error }=await db.from('group_members').insert({group_id:gid,user_id:uid});
+  if(error){ toast("Couldn't add — try again"); return; }
+  g.members.push(uid);
+  closeModal(); renderGroups();
+  toast(`Added ${p.name} to the group`);
+};
 window.leaveGroup=async function(gid){
   if(!ME) return;
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
@@ -994,7 +1020,7 @@ $("#new-group").addEventListener("click", ()=>{
       </div>
       <label class="fld"><span class="lab">Title</span><input id="g-title" placeholder="e.g. Seattle AFEs lunch"></label>
       <label class="fld"><span class="lab">Description</span><textarea id="g-desc" placeholder="What's this group for?"></textarea></label>
-      <div class="privacy-row"><div class="pl">Private group<small>Only invited members can see and join</small></div><button class="switch" id="g-private" data-priv="private"></button></div>
+      <div class="privacy-row"><div class="pl">Private group<small>Only members can see this group. You can add people after creating.</small></div><button class="switch" id="g-private" data-priv="private"></button></div>
     </div>
     <div class="m-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" onclick="createGroup()">Create & join</button></div>`);
 });
@@ -1084,11 +1110,11 @@ window.deleteMyAccount=async function(){
     await db.from('groups').update({created_by:null}).eq('created_by', ME.id); // detach groups we created
     const { error } = await db.from('users').delete().eq('id', ME.id);       // group_members cascades
     if(error){ console.error(error); toast("Couldn't delete your account — try again"); return; }
-    await db.auth.signOut().catch(()=>{});                                   // end OAuth session so auto-login doesn't recreate the account
+    localStorage.setItem("orbit-deleted", "1");
+    await db.auth.signOut().catch(()=>{});
     ME=null; closeModal();
     $("#app").classList.add("hidden"); $("#login").classList.remove("hidden");
-    const n=$("#lg-name"), em=$("#lg-email"); if(n) n.value=""; if(em) em.value="";
-    toast("Account deleted — safe travels ");
+    toast("Account deleted");
   }catch(e){ console.error(e); toast("Couldn't delete your account — try again"); }
 };
 $("#btn-privacy").addEventListener("click", ()=> ME && openPrivacy());
@@ -1803,13 +1829,18 @@ function enablePinDrop(){
   if(btn){ btn.classList.add("on"); btn.textContent="Tap map..."; }
   toast("Tap anywhere on the map to drop your pin");
 
-  map.once("click", function(e){
-    const {lat, lng} = e.latlng;
-    saveCachedLocation({lat, lng, accuracy:500, ts:Date.now()});
-    showLocation(lat, lng, 500, {announce:true});
+  // Use a direct DOM listener on the map container to catch all clicks
+  const mapEl = map.getContainer();
+  function onMapClick(e){
+    const latlng = map.mouseEventToLatLng(e);
+    saveCachedLocation({lat:latlng.lat, lng:latlng.lng, accuracy:500, ts:Date.now()});
+    showLocation(latlng.lat, latlng.lng, 500, {announce:true});
     disablePinDrop();
     toast("Pin dropped — this is your location now");
-  });
+    mapEl.removeEventListener("click", onMapClick);
+  }
+  // Small delay so the button click itself doesn't immediately fire
+  setTimeout(()=> mapEl.addEventListener("click", onMapClick, {once:true}), 100);
 }
 
 function disablePinDrop(){
@@ -1927,6 +1958,13 @@ async function boot(){
     history.replaceState(null, '', window.location.pathname);
   }
 
+  // If account was just deleted, don't auto-login — clear the flag on next manual sign-in
+  if(localStorage.getItem("orbit-deleted")){
+    await db.auth.signOut().catch(()=>{});
+    localStorage.removeItem("orbit-deleted");
+    return;
+  }
+
   // Check if user is already logged in (session persists)
   const { data: { session } } = await db.auth.getSession();
   if(session){
@@ -1936,6 +1974,7 @@ async function boot(){
   // Listen for auth state changes (handles redirect back from Google)
   db.auth.onAuthStateChange(async (event, session) => {
     if(event === 'SIGNED_IN' && session && !ME){
+      if(localStorage.getItem("orbit-deleted")){ localStorage.removeItem("orbit-deleted"); return; }
       await handleAuthSession(session);
     }
   });
