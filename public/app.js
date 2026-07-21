@@ -924,9 +924,18 @@ document.addEventListener("click", e=>{ const sw=e.target.closest("[data-priv]")
 /* ============================================================================
    LOGIN + BOOT
    ========================================================================== */
+let tileLayer=null;
+// CartoDB basemaps: dark_all for dark theme, light_all for light theme (no API key).
+function tileUrlFor(theme){ return `https://{s}.basemaps.cartocdn.com/${theme==="light"?"light_all":"dark_all"}/{z}/{x}/{y}{r}.png`; }
+function setMapTiles(theme){
+  if(!map) return;
+  if(tileLayer) map.removeLayer(tileLayer);
+  tileLayer=L.tileLayer(tileUrlFor(theme),{ maxZoom:19, subdomains:"abcd" }).addTo(map);
+  tileLayer.bringToBack();
+}
 function initMap(){
   map=L.map("map",{ zoomControl:true, attributionControl:false }).setView([44,-100],4);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{ maxZoom:19, subdomains:"abcd" }).addTo(map);
+  setMapTiles(currentTheme());
   markerLayer=L.layerGroup().addTo(map);
   renderMap();
 }
@@ -1020,6 +1029,37 @@ async function enterApp(){
 }
 
 $("#lg-google").addEventListener("click", signInWithGoogle);
+
+/* ============================================================================
+   THEME (dark / light) — follows the OS by default, remembers explicit choice.
+   ========================================================================== */
+const THEME_KEY = "orbit-theme";
+// Effective theme: saved choice if the user picked one, else the OS preference.
+function currentTheme(){
+  const saved = localStorage.getItem(THEME_KEY);
+  if(saved==="light"||saved==="dark") return saved;
+  return (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+}
+function applyTheme(theme){
+  document.documentElement.setAttribute("data-theme", theme);
+  const btn=$("#btn-theme");
+  if(btn){ btn.textContent = theme==="light" ? "☀️" : "🌙"; btn.title = `Switch to ${theme==="light"?"dark":"light"} mode`; }
+  setMapTiles(theme); // swap Leaflet basemap to match
+}
+function toggleTheme(){
+  const next = currentTheme()==="light" ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, next); // explicit choice is remembered
+  applyTheme(next);
+}
+// Apply immediately at load so the login screen already matches.
+applyTheme(currentTheme());
+$("#btn-theme").addEventListener("click", toggleTheme);
+// If the user hasn't chosen explicitly, follow live OS changes.
+if(window.matchMedia){
+  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", ()=>{
+    if(!localStorage.getItem(THEME_KEY)) applyTheme(currentTheme());
+  });
+}
 
 async function boot(){
   buildFilterChips();
