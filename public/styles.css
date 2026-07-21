@@ -438,9 +438,10 @@
   .swipe-stamp.nope { left:22px;  transform:rotate(-14deg); color:var(--ink-faint); border-color:var(--ink-faint); }
   /* Action buttons — anchored on the card */
   .sc-actions { display:flex; gap:18px; justify-content:center; align-items:center; padding-top:16px; margin-top:auto; }
-  .swipe-btn { width:56px; height:56px; border-radius:50%; border:2px solid var(--line); background:var(--panel);
-    font-size:22px; display:grid; place-items:center; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.08);
+  .swipe-btn { width:60px; height:60px; border-radius:50%; border:2px solid var(--line); background:var(--panel);
+    display:grid; place-items:center; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.08);
     transition:transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s ease, border-color .15s ease, color .15s ease; }
+  .swipe-btn svg { width:28px; height:28px; display:block; }
   .swipe-btn:hover { transform:translateY(-3px) scale(1.06); }
   .swipe-btn:active { transform:scale(.9); }
   .swipe-btn.no    { color:var(--ink-dim); }

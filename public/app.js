@@ -701,8 +701,12 @@ function swipeCardHTML(p, i){
         </div>`:""}
       </div>
       <div class="sc-actions">
-        <button class="swipe-btn no"  data-swipe="no"  aria-label="Pass" title="Pass (←)">✕</button>
-        <button class="swipe-btn yes" data-swipe="yes" aria-label="Connect &amp; message" title="Connect &amp; message (→)">✉</button>
+        <button class="swipe-btn no"  data-swipe="no"  aria-label="Pass" title="Pass (←)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+        <button class="swipe-btn yes" data-swipe="yes" aria-label="Connect &amp; message" title="Connect &amp; message (→)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg>
+        </button>
       </div>
     </div>`;
 }
