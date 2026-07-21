@@ -726,19 +726,23 @@
   /* Big background cards (AFE imagery) */
   .ob-bg-cards { position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
   .ob-bg-card {
-    position:absolute; border-radius:20px; overflow:hidden; border:6px solid var(--panel);
-    box-shadow:0 20px 50px rgba(0,0,0,.12); opacity:.35;
-    animation:obBgDrift 12s ease-in-out infinite alternate;
+    position:absolute; border-radius:24px; overflow:hidden; border:8px solid var(--panel);
+    box-shadow:0 24px 60px rgba(0,0,0,.14); opacity:.4;
+    animation:obBgDrift 14s ease-in-out infinite alternate;
   }
   .ob-bg-card img { width:100%; height:100%; object-fit:cover; }
-  .ob-bgc-1 { width:200px; height:240px; top:8%; left:4%; transform:rotate(-6deg); animation-delay:0s; }
-  .ob-bgc-2 { width:180px; height:220px; top:12%; right:5%; transform:rotate(4deg); animation-delay:1.5s; }
-  .ob-bgc-3 { width:170px; height:210px; bottom:10%; left:8%; transform:rotate(3deg); animation-delay:3s; }
-  .ob-bgc-4 { width:220px; height:160px; bottom:14%; right:6%; transform:rotate(-3deg); animation-delay:4.5s; border-radius:16px; }
-  @keyframes obBgDrift { 0% { transform:rotate(var(--r,0deg)) translateY(0); } 100% { transform:rotate(var(--r,0deg)) translateY(-12px); } }
-  .ob-bgc-1 { --r:-6deg; } .ob-bgc-2 { --r:4deg; } .ob-bgc-3 { --r:3deg; } .ob-bgc-4 { --r:-3deg; }
-  :root[data-theme="dark"] .ob-bg-card { opacity:.2; }
+  .ob-bgc-1 { width:280px; height:320px; top:4%; left:2%; transform:rotate(-5deg); animation-delay:0s; }
+  .ob-bgc-2 { width:260px; height:300px; top:6%; right:2%; transform:rotate(4deg); animation-delay:2s; }
+  .ob-bgc-3 { width:240px; height:280px; bottom:4%; left:3%; transform:rotate(3deg); animation-delay:4s; }
+  .ob-bgc-4 { width:300px; height:200px; bottom:8%; right:3%; transform:rotate(-2deg); animation-delay:6s; }
+  .ob-bgc-5 { width:250px; height:290px; top:6%; right:4%; transform:rotate(5deg); animation-delay:1s; }
+  .ob-bgc-6 { width:240px; height:270px; bottom:6%; left:4%; transform:rotate(-4deg); animation-delay:3s; }
+  @keyframes obBgDrift { 0% { transform:rotate(var(--r,0deg)) translateY(0); } 100% { transform:rotate(var(--r,0deg)) translateY(-18px); } }
+  .ob-bgc-1 { --r:-5deg; } .ob-bgc-2 { --r:4deg; } .ob-bgc-3 { --r:3deg; } .ob-bgc-4 { --r:-2deg; } .ob-bgc-5 { --r:5deg; } .ob-bgc-6 { --r:-4deg; }
+  :root[data-theme="dark"] .ob-bg-card { opacity:.18; }
   @media (max-width:820px) { .ob-bg-cards { display:none; } }
+
+  .ob-sub-label { font-size:12px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.08em; margin:0; }
 
   /* Mini profile cards on welcome step */
   .ob-cards-preview { display:flex; gap:12px; margin:8px 0 20px; perspective:800px; }
