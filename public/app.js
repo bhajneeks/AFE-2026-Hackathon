@@ -572,12 +572,13 @@ function renderMap(){
   const list=visiblePeople();
   renderHeat(list);
   updateOnlineCount();
+  if(pinLayer) pinLayer.clearLayers();
   if(ME && ME.privacy.onMap){
     const cached = getCachedLocation();
     let myLat, myLng;
     if(cached){ myLat=cached.lat; myLng=cached.lng; }
     else { const j=jitter(ME.city, ME.id+"me"); if(j){ myLat=j.lat; myLng=j.lng; } }
-    if(myLat!=null) L.marker([myLat,myLng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${esc(ME.city)}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile</a>`);
+    if(myLat!=null) L.marker([myLat,myLng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${cached?"Pinned location":"${esc(ME.city)}"}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile</a>`);
   }
   for(const p of list){
     const j=jitter(p.city, p.id); if(!j) continue;
@@ -1891,9 +1892,12 @@ function enablePinDrop(){
     const point = L.point(e.clientX - rect.left, e.clientY - rect.top);
     const latlng = map.containerPointToLatLng(point);
     saveCachedLocation({lat:latlng.lat, lng:latlng.lng, accuracy:500, ts:Date.now()});
-    showLocation(latlng.lat, latlng.lng, 500, {announce:true});
     overlay.remove();
     disablePinDrop();
+    // Re-render map so your face pin moves to the new location
+    renderMap();
+    // Fly to the dropped location
+    map.flyTo([latlng.lat, latlng.lng], 11, {duration:.9});
     toast("Pin saved");
   }, {once:true});
 }
