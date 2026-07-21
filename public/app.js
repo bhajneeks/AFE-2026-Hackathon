@@ -615,9 +615,9 @@ function renderHeat(list){
     }
   }
   if(ME && ME.privacy.onMap){
-    const cached=getCachedLocation();
+    const cachedHeat=getCachedLocation();
     let ml,mg;
-    if(cached){ ml=cached.lat; mg=cached.lng; }
+    if(cachedHeat){ ml=cachedHeat.lat; mg=cachedHeat.lng; }
     else { const jm=jitter(ME.city, ME.id+"me"); if(jm){ ml=jm.lat; mg=jm.lng; } }
     if(ml!=null){ add(ml,mg,1.0); for(let k=0;k<5;k++){ add(ml+(Math.sin(k)*0.03), mg+(Math.cos(k)*0.03), 0.6); } }
   }
@@ -635,13 +635,14 @@ function renderMap(){
   const list=visiblePeople();
   renderHeat(list);
   updateOnlineCount();
-  if(pinLayer) pinLayer.clearLayers();
   if(ME && ME.privacy.onMap){
     const cached = getCachedLocation();
     let myLat, myLng;
     if(cached){ myLat=cached.lat; myLng=cached.lng; }
     else { const j=jitter(ME.city, ME.id+"me"); if(j){ myLat=j.lat; myLng=j.lng; } }
     if(myLat!=null) L.marker([myLat,myLng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${cached?"Pinned location":esc(ME.city)}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile</a>`);
+    // Restore pin-drop indicator (green dot + circle) if a saved pin exists
+    if(cached) restoreSavedPin();
   }
   for(const p of list){
     const j=jitter(p.city, p.id); if(!j) continue;
@@ -1495,9 +1496,16 @@ function renderGlobe(){
     cityMap[p.city].people.push(p);
   }
   if(ME && ME.privacy?.onMap){
-    const c = CITIES[ME.city];
-    if(c && !cityMap[ME.city]) cityMap[ME.city] = { lat:c.lat, lng:c.lng, people:[], name:ME.city };
-    if(cityMap[ME.city]) cityMap[ME.city].people.push(ME);
+    const cachedGlobe = getCachedLocation();
+    if(cachedGlobe){
+      const pinCity = nearestHub(cachedGlobe.lat, cachedGlobe.lng) || ME.city;
+      if(!cityMap[pinCity]) cityMap[pinCity] = { lat:cachedGlobe.lat, lng:cachedGlobe.lng, people:[], name:pinCity };
+      cityMap[pinCity].people.push(ME);
+    } else {
+      const c = CITIES[ME.city];
+      if(c && !cityMap[ME.city]) cityMap[ME.city] = { lat:c.lat, lng:c.lng, people:[], name:ME.city };
+      if(cityMap[ME.city]) cityMap[ME.city].people.push(ME);
+    }
   }
   const cities = Object.values(cityMap);
 
@@ -1530,8 +1538,11 @@ function renderGlobe(){
     return { lat:j.lat, lng:j.lng, person:p, online: ONLINE_IDS.has(p.id) };
   }).filter(Boolean);
   if(ME && ME.privacy?.onMap){
-    const j = jitter(ME.city, ME.id+"me");
-    if(j) points.push({ lat:j.lat, lng:j.lng, person:ME, online:true, isMe:true });
+    const cached = getCachedLocation();
+    let mLat, mLng;
+    if(cached){ mLat=cached.lat; mLng=cached.lng; }
+    else { const j=jitter(ME.city, ME.id+"me"); if(j){ mLat=j.lat; mLng=j.lng; } }
+    if(mLat!=null) points.push({ lat:mLat, lng:mLng, person:ME, online:true, isMe:true });
   }
   globeInstance.pointsData(points)
     .pointLat(d => d.lat)
@@ -1541,9 +1552,9 @@ function renderGlobe(){
     .pointRadius(d => d.isMe ? 0.55 : 0.4)
     .onPointClick(d => {
       if(!d.person || d.isMe) return;
-      // Draw a glowing arc from ME's city to the clicked person's city
       if(ME){
-        const from = jitter(ME.city, ME.id+"me") || CITIES[ME.city];
+        const cachedArc = getCachedLocation();
+        const from = cachedArc || jitter(ME.city, ME.id+"me") || CITIES[ME.city];
         const to   = { lat:d.lat, lng:d.lng };
         if(from) showGlobeArc(from, to, d.person);
       }
@@ -1708,6 +1719,9 @@ function locateMe(e){
   );
 }
 function locateFallbackToCity(){
+  // If user already has a pin-drop, use that instead of overriding with city center
+  const existing = getCachedLocation();
+  if(existing){ showLocation(existing.lat, existing.lng, existing.accuracy||500, {announce:true}); return; }
   if(ME && ME.city && CITIES[ME.city] && ME.city!=="Remote / Virtual"){
     const c=CITIES[ME.city];
     showLocation(c.lat, c.lng, 2000, {announce:true});
@@ -2024,6 +2038,8 @@ function enablePinDrop(){
     saveCachedLocation({lat:latlng.lat, lng:latlng.lng, accuracy:500, ts:Date.now()});
     overlay.remove();
     disablePinDrop();
+    // Clear old pin indicator before re-rendering
+    if(pinLayer) pinLayer.clearLayers();
     // Re-render map so your face pin moves to the new location
     renderMap();
     // Fly to the dropped location
@@ -2040,10 +2056,15 @@ function disablePinDrop(){
   const overlay = document.getElementById("pin-drop-overlay");
   if(overlay) overlay.remove();
 }
-// Show saved pin on map load
+// Show saved pin accuracy circle on map (face pin is already rendered via renderMap)
 function restoreSavedPin(){
   const cached = getCachedLocation();
-  if(cached && map) showLocation(cached.lat, cached.lng, cached.accuracy||500, {announce:false});
+  if(!cached || !map) return;
+  if(!pinLayer){ pinLayer=L.layerGroup().addTo(map); }
+  // Only add the accuracy circle, not a duplicate marker — facePin handles the visible avatar
+  if(!pinLayer.getLayers().length){
+    L.circle([cached.lat, cached.lng], { radius:Math.max(cached.accuracy||500,300), color:"#46d6a4", weight:1, fillColor:"#46d6a4", fillOpacity:.08 }).addTo(pinLayer);
+  }
 }
 
 async function enterApp(){
