@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   avail TEXT DEFAULT 'coffee',
   new_too BOOLEAN DEFAULT true,
   interests TEXT[] DEFAULT '{}',
+  topics TEXT[] DEFAULT '{}',
   bio TEXT DEFAULT '',
   photo TEXT DEFAULT NULL,
   privacy JSONB DEFAULT '{"onMap":true,"city":true,"office":true,"school":true,"interests":true,"linkedin":true,"email":true,"availability":true}',
@@ -56,17 +57,28 @@ ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE group_members ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations with anon key (hackathon — no auth complexity)
+-- Allow all operations with anon key (hackathon — no auth complexity).
+-- NOTE: fully permissive RLS means anyone with the anon key can read/write/delete
+-- any row. Acceptable for a demo; tighten (ownership checks) before real-world use.
+-- DROP-then-CREATE makes this script safe to re-run.
+DROP POLICY IF EXISTS "Allow all on users" ON users;
+DROP POLICY IF EXISTS "Allow all on messages" ON messages;
+DROP POLICY IF EXISTS "Allow all on groups" ON groups;
+DROP POLICY IF EXISTS "Allow all on group_members" ON group_members;
 CREATE POLICY "Allow all on users" ON users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on messages" ON messages FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on groups" ON groups FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on group_members" ON group_members FOR ALL USING (true) WITH CHECK (true);
 
--- Enable Realtime on messages table
-ALTER PUBLICATION supabase_realtime ADD TABLE messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE users;
-ALTER PUBLICATION supabase_realtime ADD TABLE groups;
-ALTER PUBLICATION supabase_realtime ADD TABLE group_members;
+-- Enable Realtime (idempotent — ignore "already member of publication" on re-run)
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+  ALTER PUBLICATION supabase_realtime ADD TABLE users;
+  ALTER PUBLICATION supabase_realtime ADD TABLE groups;
+  ALTER PUBLICATION supabase_realtime ADD TABLE group_members;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Seed default groups
 INSERT INTO groups (id, emoji, title, description, city) VALUES

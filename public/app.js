@@ -1,64 +1,87 @@
 /* ============================================================================
-   ORBIT — single-file MVP (no voice, no Slack, no Amazon-internal deps)
-   Emphasis: Profile cards + login · Pair Up · Filters · in-app Messaging (1:1
-   DMs + working group chats) · brown-bag group chats · AFE map with face pins.
+   ORBIT — AFE intern connection platform (Supabase-backed, no custom server)
+   Emphasis: Profile cards + login · Pair Up · Filters · real-time Messaging
+   (1:1 DMs + group chats via Supabase Realtime) · brown-bag group chats ·
+   AFE map with face pins across Amazon's North American hubs.
    Handoff = in-app DM + "Connect on LinkedIn" (opens the profile). No email.
-   Profiles are fake (sample LinkedIn handles).
+   Profiles, messages, and groups all persist in Supabase (Postgres + Realtime).
+   The PEOPLE array below is a design-time reference/seed source only — at
+   runtime doLogin() replaces it with live rows from the `users` table.
    ========================================================================== */
 
-/* ---------- City geo (approximate centers — privacy: never exact) --------- */
+/* ---------- Amazon corporate hub geo (approximate centers — never exact) ---
+   Publicly listed North American Amazon HQ / Tech Hub locations:
+   HQ1 = Seattle, HQ2 = Arlington (National Landing), plus the Tech Hubs.
+   Ordered roughly west -> east so the filter list reads geographically. ------ */
 const CITIES = {
-  "Seattle, WA":      { lat:47.6062, lng:-122.3321, tz:"PT" },
+  "Seattle, WA":      { lat:47.6062, lng:-122.3321, tz:"PT" }, // HQ1
+  "Bellevue, WA":     { lat:47.6101, lng:-122.2015, tz:"PT" },
+  "Portland, OR":     { lat:45.5152, lng:-122.6784, tz:"PT" },
+  "Vancouver, BC":    { lat:49.2827, lng:-123.1207, tz:"PT" },
   "San Francisco, CA":{ lat:37.7749, lng:-122.4194, tz:"PT" },
+  "Sunnyvale, CA":    { lat:37.3688, lng:-122.0363, tz:"PT" },
+  "Santa Monica, CA": { lat:34.0195, lng:-118.4912, tz:"PT" },
+  "Irvine, CA":       { lat:33.6846, lng:-117.8265, tz:"PT" },
+  "San Diego, CA":    { lat:32.7157, lng:-117.1611, tz:"PT" },
+  "Tempe, AZ":        { lat:33.4255, lng:-111.9400, tz:"MT" },
+  "Boulder, CO":      { lat:40.0150, lng:-105.2705, tz:"MT" },
+  "Denver, CO":       { lat:39.7392, lng:-104.9903, tz:"MT" },
+  "Dallas, TX":       { lat:32.7767, lng:-96.7970,  tz:"CT" },
   "Austin, TX":       { lat:30.2672, lng:-97.7431,  tz:"CT" },
+  "Minneapolis, MN":  { lat:44.9778, lng:-93.2650,  tz:"CT" },
+  "Chicago, IL":      { lat:41.8781, lng:-87.6298,  tz:"CT" },
+  "Nashville, TN":    { lat:36.1627, lng:-86.7816,  tz:"CT" },
+  "Detroit, MI":      { lat:42.3314, lng:-83.0458,  tz:"ET" },
+  "Pittsburgh, PA":   { lat:40.4406, lng:-79.9959,  tz:"ET" },
+  "Atlanta, GA":      { lat:33.7490, lng:-84.3880,  tz:"ET" },
+  "Toronto, ON":      { lat:43.6532, lng:-79.3832,  tz:"ET" },
+  "Arlington, VA":    { lat:38.8799, lng:-77.1068,  tz:"ET" }, // HQ2 / National Landing
+  "Herndon, VA":      { lat:38.9696, lng:-77.3861,  tz:"ET" },
   "New York, NY":     { lat:40.7128, lng:-74.0060,  tz:"ET" },
   "Boston, MA":       { lat:42.3601, lng:-71.0589,  tz:"ET" },
-  "Arlington, VA":    { lat:38.8799, lng:-77.1068,  tz:"ET" },
-  "Chicago, IL":      { lat:41.8781, lng:-87.6298,  tz:"CT" },
-  "Toronto, ON":      { lat:43.6532, lng:-79.3832,  tz:"ET" },
-  "Vancouver, BC":    { lat:49.2827, lng:-123.1207, tz:"PT" },
   "Remote / Virtual": { lat:39.5,    lng:-98.35,    tz:"—"  }
 };
 const INTERESTS = ["backend systems","frontend","ML / AI","distributed systems","mobile","security","data eng","design systems","UX research","accessibility","devtools","gaming","rock climbing","coffee","running","board games","cooking","photography","music"];
 
-/* ---------- Seed people (fake AFE directory — injected below) ------------- */
+/* ---------- Seed people (fake AFE directory — mirrors supabase-seed-users.sql;
+   replaced at runtime by live `users` rows in doLogin) --------------------- */
 let PEOPLE = [
   { "id":"p01", "name":"Maya Chen", "track":"SDE", "city":"Seattle, WA", "school":"University of Washington", "org":"Cloud · Compute", "interests":["backend systems","coffee"], "avail":"coffee", "newToo":true, "linkedin":"maya-chen", "email":"maya.chen@example.com", "bio":"First internship — pumped to learn backend systems and hunt down good coffee." },
   { "id":"p02", "name":"Diego Ramirez", "track":"SDE", "city":"San Francisco, CA", "school":"UC Berkeley", "org":"Payments · Risk", "interests":["distributed systems","rock climbing"], "avail":"coffee", "newToo":true, "linkedin":"diego-ramirez", "email":"diego.ramirez@example.com", "bio":"New intern who loves distributed systems and weekend climbing trips." },
   { "id":"p03", "name":"Aisha Patel", "track":"HDE", "city":"New York, NY", "school":"Parsons School of Design", "org":"Design · Systems", "interests":["design systems","UX research","coffee"], "avail":"coffee", "newToo":true, "linkedin":"aisha-patel", "email":"aisha.patel@example.com", "bio":"First-time intern in design systems — always up for coffee and sketching." },
   { "id":"p04", "name":"Liam O'Connor", "track":"SDE", "city":"Boston, MA", "school":"Northeastern University", "org":"Data · Pipelines", "interests":["data eng","backend systems","running"], "avail":"dm", "newToo":false, "linkedin":"liam-oconnor", "email":"liam.oconnor@example.com", "bio":"Back for round two on data pipelines; ask me about my running routes." },
   { "id":"p05", "name":"Priya Nair", "track":"SDE", "city":"Austin, TX", "school":"University of Texas at Austin", "org":"ML · Platform", "interests":["ML / AI","distributed systems"], "avail":"coffee", "newToo":true, "linkedin":"priya-nair", "email":"priya.nair@example.com", "bio":"First internship and I'm all in on ML and distributed systems." },
-  { "id":"p06", "name":"Kenji Tanaka", "track":"SDE", "city":"Seattle, WA", "school":"University of Washington", "org":"Mobile · iOS", "interests":["mobile","gaming"], "avail":"lunch", "newToo":true, "linkedin":"kenji-tanaka", "email":"kenji.tanaka@example.com", "bio":"New here, building for iOS by day and gaming by night." },
+  { "id":"p06", "name":"Kenji Tanaka", "track":"SDE", "city":"Bellevue, WA", "school":"University of Washington", "org":"Mobile · iOS", "interests":["mobile","gaming"], "avail":"lunch", "newToo":true, "linkedin":"kenji-tanaka", "email":"kenji.tanaka@example.com", "bio":"New here, building for iOS by day and gaming by night." },
   { "id":"p07", "name":"Fatima Al-Rashid", "track":"HDE", "city":"Arlington, VA", "school":"Rhode Island School of Design", "org":"Design · Research", "interests":["UX research","accessibility","photography"], "avail":"coffee", "newToo":true, "linkedin":"fatima-alrashid", "email":"fatima.alrashid@example.com", "bio":"First-time intern in UX research — I care a lot about accessible design." },
-  { "id":"p08", "name":"Noah Kim", "track":"SDE", "city":"San Francisco, CA", "school":"Stanford University", "org":"Search · Ranking", "interests":["ML / AI","backend systems","music"], "avail":"dm", "newToo":false, "linkedin":"noah-kim", "email":"noah.kim@example.com", "bio":"Returning intern on search ranking; happy to talk ML or share playlists." },
+  { "id":"p08", "name":"Noah Kim", "track":"SDE", "city":"Sunnyvale, CA", "school":"Stanford University", "org":"Search · Ranking", "interests":["ML / AI","backend systems","music"], "avail":"dm", "newToo":false, "linkedin":"noah-kim", "email":"noah.kim@example.com", "bio":"Returning intern on search ranking; happy to talk ML or share playlists." },
   { "id":"p09", "name":"Sofia Rossi", "track":"HDE", "city":"Chicago, IL", "school":"ArtCenter College of Design", "org":"Design · Systems", "interests":["design systems","frontend","cooking"], "avail":"coffee", "newToo":true, "linkedin":"sofia-rossi", "email":"sofia.rossi@example.com", "bio":"New to the design team — I love design systems and cooking for friends." },
   { "id":"p10", "name":"Marcus Johnson", "track":"SDE", "city":"New York, NY", "school":"Georgia Tech", "org":"Security · Identity", "interests":["security","backend systems"], "avail":"coffee", "newToo":true, "linkedin":"marcus-johnson", "email":"marcus.johnson@example.com", "bio":"First internship, diving into security and backend work. Let's grab coffee!" },
   { "id":"p11", "name":"Yuki Yamamoto", "track":"HDE", "city":"Vancouver, BC", "school":"Emily Carr University", "org":"Design · Research", "interests":["UX research","design systems","board games"], "avail":"lunch", "newToo":true, "linkedin":"yuki-yamamoto", "email":"yuki.yamamoto@example.com", "bio":"New intern in UX research — board games fan, always down to prototype." },
   { "id":"p12", "name":"Omar Hassan", "track":"SDE", "city":"Toronto, ON", "school":"University of Toronto", "org":"Infra · Networking", "interests":["distributed systems","devtools"], "avail":"dm", "newToo":true, "linkedin":"omar-hassan", "email":"omar.hassan@example.com", "bio":"First-time intern on networking infra; ping me about devtools anytime." },
   { "id":"p13", "name":"Emma Larsson", "track":"SDE", "city":"Seattle, WA", "school":"University of Michigan", "org":"Web · Frontend Platform", "interests":["frontend","accessibility","coffee"], "avail":"coffee", "newToo":true, "linkedin":"emma-larsson", "email":"emma.larsson@example.com", "bio":"New here and passionate about frontend and accessible interfaces." },
-  { "id":"p14", "name":"Raj Gupta", "track":"SDE", "city":"San Francisco, CA", "school":"Carnegie Mellon University", "org":"ML · Recommendations", "interests":["ML / AI","data eng"], "avail":"busy", "newToo":false, "linkedin":"raj-gupta", "email":"raj.gupta@example.com", "bio":"Returning intern heads-down on recommendations and data work right now." },
+  { "id":"p14", "name":"Raj Gupta", "track":"SDE", "city":"San Diego, CA", "school":"Carnegie Mellon University", "org":"ML · Recommendations", "interests":["ML / AI","data eng"], "avail":"busy", "newToo":false, "linkedin":"raj-gupta", "email":"raj.gupta@example.com", "bio":"Returning intern heads-down on recommendations and data work right now." },
   { "id":"p15", "name":"Chloe Dubois", "track":"HDE", "city":"Remote / Virtual", "school":"Rhode Island School of Design", "org":"Design · Systems", "interests":["design systems","UX research","music"], "avail":"coffee", "newToo":true, "linkedin":"chloe-dubois", "email":"chloe.dubois@example.com", "bio":"First internship, remote and loving it — design systems and music nerd." },
   { "id":"p16", "name":"David Okafor", "track":"SDE", "city":"New York, NY", "school":"Cornell University", "org":"Fintech · Ledger", "interests":["backend systems","distributed systems","running"], "avail":"coffee", "newToo":false, "linkedin":"david-okafor", "email":"david.okafor@example.com", "bio":"Second internship on the ledger team; long runs keep me sane." },
-  { "id":"p17", "name":"Hana Nguyen", "track":"SDE", "city":"Austin, TX", "school":"University of Texas at Austin", "org":"Data · Analytics", "interests":["data eng","ML / AI","coffee"], "avail":"lunch", "newToo":true, "linkedin":"hana-nguyen", "email":"hana.nguyen@example.com", "bio":"New intern in analytics — into data eng, ML, and finding the best coffee." },
+  { "id":"p17", "name":"Hana Nguyen", "track":"SDE", "city":"Dallas, TX", "school":"University of Texas at Austin", "org":"Data · Analytics", "interests":["data eng","ML / AI","coffee"], "avail":"lunch", "newToo":true, "linkedin":"hana-nguyen", "email":"hana.nguyen@example.com", "bio":"New intern in analytics — into data eng, ML, and finding the best coffee." },
   { "id":"p18", "name":"Ivan Petrov", "track":"SDE", "city":"Boston, MA", "school":"MIT", "org":"DevTools · CI/CD", "interests":["devtools","distributed systems"], "avail":"dm", "newToo":false, "linkedin":"ivan-petrov", "email":"ivan.petrov@example.com", "bio":"Back again for devtools work; I like tools that make builds fast." },
-  { "id":"p19", "name":"Zara Ahmed", "track":"HDE", "city":"Chicago, IL", "school":"School of the Art Institute of Chicago", "org":"Design · Research", "interests":["UX research","accessibility","photography"], "avail":"coffee", "newToo":true, "linkedin":"zara-ahmed", "email":"zara.ahmed@example.com", "bio":"First-time intern in UX research, focused on accessibility and photography." },
+  { "id":"p19", "name":"Zara Ahmed", "track":"HDE", "city":"Minneapolis, MN", "school":"School of the Art Institute of Chicago", "org":"Design · Research", "interests":["UX research","accessibility","photography"], "avail":"coffee", "newToo":true, "linkedin":"zara-ahmed", "email":"zara.ahmed@example.com", "bio":"First-time intern in UX research, focused on accessibility and photography." },
   { "id":"p20", "name":"Lucas Silva", "track":"SDE", "city":"Remote / Virtual", "school":"University of Waterloo", "org":"Games · Client", "interests":["gaming","frontend","mobile"], "avail":"coffee", "newToo":true, "linkedin":"lucas-silva", "email":"lucas.silva@example.com", "bio":"New remote intern building game clients — mobile and frontend curious." },
   { "id":"p21", "name":"Mei Lin", "track":"SDE", "city":"Seattle, WA", "school":"University of Washington", "org":"Cloud · Storage", "interests":["backend systems","distributed systems","cooking"], "avail":"coffee", "newToo":true, "linkedin":"mei-lin", "email":"mei.lin@example.com", "bio":"First internship on storage; I love backend systems and home cooking." },
-  { "id":"p22", "name":"Andre Laurent", "track":"SDE", "city":"San Francisco, CA", "school":"UCLA", "org":"Growth · Experimentation", "interests":["data eng","frontend"], "avail":"dm", "newToo":false, "linkedin":"andre-laurent", "email":"andre.laurent@example.com", "bio":"Returning intern running experiments; I bridge data and frontend." },
-  { "id":"p23", "name":"Grace Park", "track":"HDE", "city":"Seattle, WA", "school":"Parsons School of Design", "org":"Design · Systems", "interests":["design systems","accessibility","running"], "avail":"coffee", "newToo":true, "linkedin":"grace-park", "email":"grace.park@example.com", "bio":"New to design systems — accessibility first, and I run every morning." },
-  { "id":"p24", "name":"Tomás Herrera", "track":"SDE", "city":"Arlington, VA", "school":"Virginia Tech", "org":"Security · Identity", "interests":["security","backend systems","gaming"], "avail":"lunch", "newToo":true, "linkedin":"tomas-herrera", "email":"tomas.herrera@example.com", "bio":"First internship in identity security; ask me about co-op games." },
+  { "id":"p22", "name":"Andre Laurent", "track":"SDE", "city":"Santa Monica, CA", "school":"UCLA", "org":"Growth · Experimentation", "interests":["data eng","frontend"], "avail":"dm", "newToo":false, "linkedin":"andre-laurent", "email":"andre.laurent@example.com", "bio":"Returning intern running experiments; I bridge data and frontend." },
+  { "id":"p23", "name":"Grace Park", "track":"HDE", "city":"Portland, OR", "school":"Parsons School of Design", "org":"Design · Systems", "interests":["design systems","accessibility","running"], "avail":"coffee", "newToo":true, "linkedin":"grace-park", "email":"grace.park@example.com", "bio":"New to design systems — accessibility first, and I run every morning." },
+  { "id":"p24", "name":"Tomás Herrera", "track":"SDE", "city":"Herndon, VA", "school":"Virginia Tech", "org":"Security · Identity", "interests":["security","backend systems","gaming"], "avail":"lunch", "newToo":true, "linkedin":"tomas-herrera", "email":"tomas.herrera@example.com", "bio":"First internship in identity security; ask me about co-op games." },
   { "id":"p25", "name":"Nadia Volkova", "track":"SDE", "city":"New York, NY", "school":"New York University", "org":"Web · Frontend Platform", "interests":["frontend","design systems","photography"], "avail":"coffee", "newToo":true, "linkedin":"nadia-volkova", "email":"nadia.volkova@example.com", "bio":"New intern on frontend platform — design-minded and always shooting photos." },
-  { "id":"p26", "name":"Isaac Goldberg", "track":"SDE", "city":"Boston, MA", "school":"University of Wisconsin–Madison", "org":"ML · Platform", "interests":["ML / AI","distributed systems","board games"], "avail":"dm", "newToo":false, "linkedin":"isaac-goldberg", "email":"isaac.goldberg@example.com", "bio":"Back for another summer on ML platform; board game night is my thing." },
-  { "id":"p27", "name":"Amara Okoye", "track":"HDE", "city":"Vancouver, BC", "school":"Emily Carr University", "org":"Design · Systems", "interests":["design systems","UX research","cooking"], "avail":"coffee", "newToo":true, "linkedin":"amara-okoye", "email":"amara.okoye@example.com", "bio":"First-time intern in design systems — I research, sketch, and cook." },
-  { "id":"p28", "name":"Ravi Deshmukh", "track":"SDE", "city":"Austin, TX", "school":"Purdue University", "org":"Data · Pipelines", "interests":["data eng","backend systems"], "avail":"busy", "newToo":true, "linkedin":"ravi-deshmukh", "email":"ravi.deshmukh@example.com", "bio":"New intern heads-down on data pipelines this sprint — say hi later!" },
+  { "id":"p26", "name":"Isaac Goldberg", "track":"SDE", "city":"Pittsburgh, PA", "school":"University of Wisconsin–Madison", "org":"ML · Platform", "interests":["ML / AI","distributed systems","board games"], "avail":"dm", "newToo":false, "linkedin":"isaac-goldberg", "email":"isaac.goldberg@example.com", "bio":"Back for another summer on ML platform; board game night is my thing." },
+  { "id":"p27", "name":"Amara Okoye", "track":"HDE", "city":"Denver, CO", "school":"Emily Carr University", "org":"Design · Systems", "interests":["design systems","UX research","cooking"], "avail":"coffee", "newToo":true, "linkedin":"amara-okoye", "email":"amara.okoye@example.com", "bio":"First-time intern in design systems — I research, sketch, and cook." },
+  { "id":"p28", "name":"Ravi Deshmukh", "track":"SDE", "city":"Tempe, AZ", "school":"Purdue University", "org":"Data · Pipelines", "interests":["data eng","backend systems"], "avail":"busy", "newToo":true, "linkedin":"ravi-deshmukh", "email":"ravi.deshmukh@example.com", "bio":"New intern heads-down on data pipelines this sprint — say hi later!" },
   { "id":"p29", "name":"Lena Schmidt", "track":"SDE", "city":"Remote / Virtual", "school":"University of Illinois Urbana-Champaign", "org":"Infra · Networking", "interests":["distributed systems","security","rock climbing"], "avail":"dm", "newToo":true, "linkedin":"lena-schmidt", "email":"lena.schmidt@example.com", "bio":"First internship, remote on networking — into security and climbing." },
-  { "id":"p30", "name":"Malik Robinson", "track":"SDE", "city":"Chicago, IL", "school":"University of Maryland", "org":"Search · Ranking", "interests":["ML / AI","backend systems","music"], "avail":"coffee", "newToo":true, "linkedin":"malik-robinson", "email":"malik.robinson@example.com", "bio":"New here working on search ranking; ML by day, music always." },
-  { "id":"p31", "name":"Yuna Choi", "track":"HDE", "city":"New York, NY", "school":"ArtCenter College of Design", "org":"Design · Research", "interests":["UX research","design systems","coffee"], "avail":"lunch", "newToo":true, "linkedin":"yuna-choi", "email":"yuna.choi@example.com", "bio":"First-time intern in UX research — coffee chats and design systems, please." },
+  { "id":"p30", "name":"Malik Robinson", "track":"SDE", "city":"Nashville, TN", "school":"University of Maryland", "org":"Search · Ranking", "interests":["ML / AI","backend systems","music"], "avail":"coffee", "newToo":true, "linkedin":"malik-robinson", "email":"malik.robinson@example.com", "bio":"New here working on search ranking; ML by day, music always." },
+  { "id":"p31", "name":"Yuna Choi", "track":"HDE", "city":"Atlanta, GA", "school":"ArtCenter College of Design", "org":"Design · Research", "interests":["UX research","design systems","coffee"], "avail":"lunch", "newToo":true, "linkedin":"yuna-choi", "email":"yuna.choi@example.com", "bio":"First-time intern in UX research — coffee chats and design systems, please." },
   { "id":"p32", "name":"Gabriel Santos", "track":"SDE", "city":"Toronto, ON", "school":"University of Toronto", "org":"Mobile · Android", "interests":["mobile","frontend","gaming"], "avail":"dm", "newToo":true, "linkedin":"gabriel-santos", "email":"gabriel.santos@example.com", "bio":"New intern building for Android; mobile, frontend, and games fan." },
-  { "id":"p33", "name":"Ingrid Nilsson", "track":"HDE", "city":"San Francisco, CA", "school":"Carnegie Mellon University", "org":"Design · Systems", "interests":["design systems","UX research","accessibility"], "avail":"busy", "newToo":false, "linkedin":"ingrid-nilsson", "email":"ingrid.nilsson@example.com", "bio":"Returning design intern, heads-down on systems and research this week." },
-  { "id":"p34", "name":"Hassan Farah", "track":"SDE", "city":"Toronto, ON", "school":"University of British Columbia", "org":"DevTools · CI/CD", "interests":["devtools","distributed systems","running"], "avail":"lunch", "newToo":true, "linkedin":"hassan-farah", "email":"hassan.farah@example.com", "bio":"First internship, remote on CI/CD — devtools nerd who loves a good run." },
+  { "id":"p33", "name":"Ingrid Nilsson", "track":"HDE", "city":"Irvine, CA", "school":"Carnegie Mellon University", "org":"Design · Systems", "interests":["design systems","UX research","accessibility"], "avail":"busy", "newToo":false, "linkedin":"ingrid-nilsson", "email":"ingrid.nilsson@example.com", "bio":"Returning design intern, heads-down on systems and research this week." },
+  { "id":"p34", "name":"Hassan Farah", "track":"SDE", "city":"Detroit, MI", "school":"University of British Columbia", "org":"DevTools · CI/CD", "interests":["devtools","distributed systems","running"], "avail":"lunch", "newToo":true, "linkedin":"hassan-farah", "email":"hassan.farah@example.com", "bio":"First internship on CI/CD in Detroit — devtools nerd who loves a good run." },
   { "id":"p35", "name":"Elena Popescu", "track":"alumni", "city":"Seattle, WA", "school":"University of Washington → SDE II", "org":"Cloud · Compute", "interests":["backend systems","distributed systems","coffee"], "avail":"coffee", "newToo":false, "linkedin":"elena-popescu", "email":"elena.popescu@example.com", "bio":"Former intern, now SDE II — happy to demystify system design and growth.", "topics":["system design","intern to full-time","career growth"] },
-  { "id":"p36", "name":"Carlos Mendoza", "track":"alumni", "city":"San Francisco, CA", "school":"UC Berkeley → SDE III", "org":"ML · Platform", "interests":["ML / AI","data eng","running"], "avail":"coffee", "newToo":false, "linkedin":"carlos-mendoza", "email":"carlos.mendoza@example.com", "bio":"Intern turned SDE III on ML platform; ask me anything about code reviews.", "topics":["system design","code review culture","career growth"] },
+  { "id":"p36", "name":"Carlos Mendoza", "track":"alumni", "city":"Boulder, CO", "school":"UC Berkeley → SDE III", "org":"ML · Platform", "interests":["ML / AI","data eng","running"], "avail":"coffee", "newToo":false, "linkedin":"carlos-mendoza", "email":"carlos.mendoza@example.com", "bio":"Intern turned SDE III on ML platform; ask me anything about code reviews.", "topics":["system design","code review culture","career growth"] },
   { "id":"p37", "name":"Sarah Goldstein", "track":"alumni", "city":"New York, NY", "school":"New York University → SDE II", "org":"Web · Frontend Platform", "interests":["frontend","design systems","coffee"], "avail":"coffee", "newToo":false, "linkedin":"sarah-goldstein", "email":"sarah.goldstein@example.com", "bio":"Was an intern here too — now SDE II and glad to talk impostor syndrome.", "topics":["impostor syndrome","intern to full-time"] },
   { "id":"p38", "name":"Jin Wei Tan", "track":"alumni", "city":"Remote / Virtual", "school":"University of Waterloo → SDE II", "org":"Data · Pipelines", "interests":["data eng","distributed systems"], "avail":"dm", "newToo":false, "linkedin":"jin-wei-tan", "email":"jinwei.tan@example.com", "bio":"Ex-intern, now SDE II working remote; first standups are scarier than prod.", "topics":["first standup nerves","system design","career growth"] },
   { "id":"p39", "name":"Aaliyah Williams", "track":"alumni", "city":"Chicago, IL", "school":"School of the Art Institute of Chicago → Design Lead", "org":"Design · Systems", "interests":["design systems","UX research","photography"], "avail":"lunch", "newToo":false, "linkedin":"aaliyah-williams", "email":"aaliyah.williams@example.com", "bio":"Started as a design intern, now a lead — let's review your portfolio.", "topics":["design portfolio","impostor syndrome","career growth"] },
@@ -76,7 +99,7 @@ const state = {
   cadence:"week" // Pair Up cadence: week | biweek
 };
 
-let GROUPS = []; // seeded after PEOPLE loads
+let GROUPS = []; // loaded from the `groups` table in doLogin
 let CONVOS = {}; // key -> { key, type:'dm'|'group', peerId?, groupId?, title, messages:[{from,text,ts}], unread }
 let OPEN_CHAT = null; // key of the currently-open chat modal (null if none)
 
@@ -90,9 +113,18 @@ const initials = n => (n||"?").split(/\s+/).map(w=>w[0]).slice(0,2).join("").toU
 function hashHue(str){ let h=0; for(const c of (str||"")) h=(h*31+c.charCodeAt(0))>>>0; return h%360; }
 function avatarStyle(name){ const h=hashHue(name); return `background:linear-gradient(150deg,hsl(${h} 80% 68%),hsl(${(h+40)%360} 80% 58%))`; }
 function tzOf(city){ return (CITIES[city]||{}).tz || "—"; }
+// Normalize a school for comparison: strip any "→ SDE II" alumni suffix, lowercase, trim.
+// (Comparing on the first word alone collapses "University of Washington" and
+// "University of Texas" into "University" — so we compare the full name.)
+function schoolKey(s){ return (s||"").split("→")[0].trim().toLowerCase(); }
+function sameSchool(a,b){ const x=schoolKey(a); return !!x && x===schoolKey(b); }
 
 /* avatar that supports an uploaded photo (data URL) or falls back to initials */
-function avStyleFor(p){ return p.photo ? `background-image:url('${p.photo}')` : avatarStyle(p.name); }
+// Sanitize a photo value for use inside a single-quoted CSS url(...): drop quotes,
+// parens, and whitespace so it can't break out of the style attribute. esc() alone
+// doesn't cover single quotes, so photo URLs get this stricter treatment.
+function safePhotoUrl(u){ return String(u||"").replace(/['"()\s]/g,""); }
+function avStyleFor(p){ return p.photo ? `background-image:url('${safePhotoUrl(p.photo)}')` : avatarStyle(p.name); }
 function avInner(p){ return p.photo ? "" : initials(p.name); }
 function avatarHTML(p, cls){ return `<div class="${cls}" style="${avStyleFor(p)}">${avInner(p)}</div>`; }
 
@@ -120,7 +152,7 @@ function connectionReasons(person){
   const r=[];
   if(ME){
     if(person.city===ME.city && person.city!=="Remote / Virtual") r.push({t:`you're both in ${person.city}`, key:"city"});
-    if(person.school && ME.school && person.school.split(" ")[0]===ME.school.split(" ")[0]) r.push({t:`you both went to ${person.school}`, key:"school"});
+    if(sameSchool(person.school, ME.school)) r.push({t:`you both went to ${person.school}`, key:"school"});
     if(tzOf(person.city)===tzOf(ME.city) && tzOf(ME.city)!=="—") r.push({t:`same timezone (${tzOf(person.city)})`, key:"tz"});
     if(person.track===ME.track && ME.track!=="alumni") r.push({t:`you're both ${person.track} interns`, key:"track"});
     if(person.newToo && ME.newToo) r.push({t:"you're both new to this", key:"new"});
@@ -170,7 +202,6 @@ function grpKey(groupId){ return "grp:"+groupId; }
 // Consistent DM convo key (sorted so both sides match)
 function dmConvoKey(a, b){ return "dm:" + [a,b].sort().join(":"); }
 
-function getConvo(key){ return CONVOS[key]; }
 function ensureDM(peerId){
   const key=dmKey(peerId);
   if(!CONVOS[key]){ const p=byId(peerId); CONVOS[key]={ key, type:"dm", peerId, title:p?p.name:"", messages:[], unread:0 }; }
@@ -184,7 +215,7 @@ function ensureGroup(groupId){
 function convMembers(c){
   if(c.type==="dm") return [ME, byId(c.peerId)].filter(Boolean);
   const g=GROUPS.find(x=>x.id===c.groupId); if(!g) return [ME].filter(Boolean);
-  return g.members.map(m => byId(typeof m === 'object' ? m.user_id : m)).filter(Boolean);
+  return g.members.map(byId).filter(Boolean); // members are user-id strings
 }
 function lastMessage(c){ return c.messages[c.messages.length-1]; }
 function totalUnread(){ return Object.values(CONVOS).reduce((n,c)=>n+(c.unread||0),0); }
@@ -207,7 +238,8 @@ async function sendMessage(key, text){
     convoKey = "grp:" + c.groupId;
   }
   const ts = Date.now();
-  await db.from('messages').insert({ convo_key: convoKey, from_id: ME.id, text, ts });
+  const { error } = await db.from('messages').insert({ convo_key: convoKey, from_id: ME.id, text, ts });
+  if(error){ console.error('sendMessage failed:', error); throw error; }
 }
 
 // Supabase Realtime subscription for new messages
@@ -218,15 +250,23 @@ function subscribeToMessages(){
       const msg = payload.new;
       let localKey = msg.convo_key;
       if(msg.convo_key.startsWith('dm:')){
+        // DM keys are "dm:<a>:<b>" (sorted). Only handle if I'm a participant —
+        // otherwise a client would ingest and display strangers' private DMs.
         const parts = msg.convo_key.slice(3).split(':');
+        if(!parts.includes(ME.id)) return;
         const peerId = parts.find(id => id !== ME.id);
         if(!peerId) return;
         localKey = dmKey(peerId);
         ensureDM(peerId);
       } else if(msg.convo_key.startsWith('grp:')){
+        // Only handle group messages for groups I've actually joined.
         const groupId = msg.convo_key.slice(4);
+        const g = GROUPS.find(x=>x.id===groupId);
+        if(!g || !ME || !g.members.includes(ME.id)) return;
         localKey = grpKey(groupId);
         ensureGroup(groupId);
+      } else {
+        return; // unknown convo_key shape
       }
       pushMessage(localKey, msg.from_id, msg.text, msg.ts);
     })
@@ -243,10 +283,6 @@ async function loadMessages(convoKey){
   return (data||[]).map(m => ({ from: m.from_id, text: m.text, ts: m.ts }));
 }
 
-let TYPING={ key:null, who:null, _timer:null };
-function showTyping(key, who){ TYPING={key, who, _timer:TYPING._timer}; if(OPEN_CHAT===key) renderChatBody(); }
-function clearTyping(){ const k=TYPING.key; TYPING={key:null,who:null,_timer:null}; if(k&&OPEN_CHAT===k) renderChatBody(); }
-
 function refreshMessagingUI(){
   updateMsgBadge();
   if(state.view==="messages") renderInbox();
@@ -255,8 +291,6 @@ function refreshMessagingUI(){
 function updateMsgBadge(){
   const tab=$("#tab-messages"); if(!tab) return;
   const n=totalUnread();
-  let span=tab.querySelector("span");
-  // rebuild label with optional badge
   tab.innerHTML = `💬 <span>Messages</span>${n?`<span class="badge">${n}</span>`:""}`;
 }
 
@@ -285,7 +319,12 @@ function openChat(key){
       <button class="btn primary" id="chat-send">Send</button>
     </div>`;
   $("#modal-back").classList.add("open");
-  const input=$("#chat-input"), send=()=>{ const v=input.value; input.value=""; sendMessage(key,v); input.focus(); };
+  const input=$("#chat-input"), send=async()=>{
+    const v=input.value.trim(); if(!v) return;
+    input.value=""; input.focus();
+    try{ await sendMessage(key,v); }
+    catch(e){ input.value=v; toast("Message failed to send — try again"); } // restore text on failure
+  };
   $("#chat-send").addEventListener("click", send);
   input.addEventListener("keydown", e=>{ if(e.key==="Enter") send(); });
   renderChatBody(); setTimeout(()=>input.focus(),50);
@@ -294,7 +333,7 @@ function closeChat(){ OPEN_CHAT=null; $("#modal").className="modal"; closeModal(
 function renderChatBody(){
   const body=$("#chat-body"); if(!body||!OPEN_CHAT) return;
   const c=CONVOS[OPEN_CHAT];
-  if(!c.messages.length && !(TYPING.key===OPEN_CHAT)){
+  if(!c.messages.length){
     body.innerHTML=`<div class="chat-empty">👋 Say hi! This is the start of your ${c.type==="dm"?"conversation with "+esc(c.title.split(" ")[0]):"group chat"}.</div>`;
     return;
   }
@@ -307,8 +346,7 @@ function renderChatBody(){
       <div>${showName?`<div class="msg-sender">${esc(sender.name.split(" ")[0])}</div>`:""}<div class="msg-b">${esc(m.text)}</div></div>
     </div>`;
   }).join("");
-  const typing = (TYPING.key===OPEN_CHAT && TYPING.who) ? `<div class="msg-row them">${avatarHTML(TYPING.who,"av")}<div class="msg-b chat-typing">${esc(TYPING.who.name.split(" ")[0])} is typing…</div></div>` : "";
-  body.innerHTML=rows+typing;
+  body.innerHTML=rows;
   body.scrollTop=body.scrollHeight;
 }
 
@@ -357,7 +395,7 @@ function visiblePeople(){
     if(state.quick.has("newToo") && !p.newToo) return false;
     if(ME){
       if((state.quick.has("sameCity")||state.quick.has("nearby")) && p.city!==ME.city) return false;
-      if(state.quick.has("sameSchool") && (p.school||"").split(" ")[0]!==(ME.school||"").split(" ")[0]) return false;
+      if(state.quick.has("sameSchool") && !sameSchool(p.school, ME.school)) return false;
       if(state.quick.has("sameTz") && tzOf(p.city)!==tzOf(ME.city)) return false;
     }
     if(q){
@@ -420,7 +458,7 @@ function renderMap(){
     m.bindPopup(`
       <div style="min-width:200px">
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
-          <div style="width:38px;height:38px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-weight:800;color:#10182b;background-size:cover;background-position:center;${p.photo?`background-image:url('${p.photo}')`:avatarStyle(p.name)}">${p.photo?"":initials(p.name)}</div>
+          <div style="width:38px;height:38px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-weight:800;color:#10182b;background-size:cover;background-position:center;${p.photo?`background-image:url('${safePhotoUrl(p.photo)}')`:avatarStyle(p.name)}">${p.photo?"":initials(p.name)}</div>
           <div><b>${esc(p.name)}</b> <span style="font-size:10px;color:#888">${trackLabel(p.track)}</span><br><span style="color:#666;font-size:12px">${esc(p.org)}</span></div>
         </div>
         <div style="color:#777;font-size:12px">${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)} · ${tzOf(p.city)} · ${esc(p.school)}</div>
@@ -437,7 +475,7 @@ function facePin(p, color, me=false, alum=false){
   const size=me?40:34;
   const badge = alum ? `<div style="position:absolute;right:-2px;top:-2px;width:15px;height:15px;border-radius:50%;background:#ff8a4c;border:2px solid #0e1424;display:grid;place-items:center;font-size:9px">★</div>` : "";
   const inner = p.photo
-    ? `background-image:url('${p.photo}');background-size:cover;background-position:center`
+    ? `background-image:url('${safePhotoUrl(p.photo)}');background-size:cover;background-position:center`
     : `${avatarStyle(p.name)};display:grid;place-items:center;font-weight:800;font-size:${me?13:12}px;color:#10182b`;
   const label = p.photo ? "" : initials(p.name);
   return L.divIcon({
@@ -458,7 +496,7 @@ function pairScore(p){
   if(p.city===ME.city && p.city!=="Remote / Virtual") s+=2;
   if(tzOf(p.city)===tzOf(ME.city) && tzOf(ME.city)!=="—") s+=1;
   if(p.track===ME.track) s+=1;
-  if((p.school||"").split(" ")[0]===(ME.school||"").split(" ")[0]) s+=3;
+  if(sameSchool(p.school, ME.school)) s+=3;
   if(p.newToo && ME.newToo) s+=1;
   return s;
 }
@@ -604,7 +642,8 @@ document.addEventListener("click", e=>{
 async function joinGroup(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g||!ME) return;
   if(!g.members.includes(ME.id)){
-    await db.from('group_members').insert({ group_id: gid, user_id: ME.id });
+    const { error } = await db.from('group_members').insert({ group_id: gid, user_id: ME.id });
+    if(error){ console.error('joinGroup failed:', error); toast("Couldn't join — try again"); return; }
     g.members.push(ME.id);
     toast(`Joined "${g.title}" ✓`); renderGroups();
   }
@@ -613,7 +652,8 @@ async function joinGroup(gid){
 async function openGroupChat(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
   if(ME && !g.members.includes(ME.id)){
-    await db.from('group_members').insert({ group_id: gid, user_id: ME.id });
+    const { error } = await db.from('group_members').insert({ group_id: gid, user_id: ME.id });
+    if(error){ console.error('openGroupChat join failed:', error); toast("Couldn't open chat — try again"); return; }
     g.members.push(ME.id);
   }
   ensureGroup(gid);
@@ -696,7 +736,7 @@ function openProfile(){ PHOTO_DRAFT=ME?.photo||null; showModal(profileFormHTML("
 function profileFormHTML(heading, m, isOnboarding){
   const iv=(m?.interests)||[];
   const photo=PHOTO_DRAFT || m?.photo || null;
-  const avPrev = photo ? `background-image:url('${photo}')` : avatarStyle(m?.name||ME?.name||"You");
+  const avPrev = photo ? `background-image:url('${safePhotoUrl(photo)}')` : avatarStyle(m?.name||ME?.name||"You");
   const avTxt  = photo ? "" : initials(m?.name||ME?.name||"You");
   return `
     <div class="m-head"><span class="logo" style="width:26px;height:26px"></span><h2>${heading}</h2>${isOnboarding?'':'<button class="x" onclick="closeModal()">×</button>'}</div>
@@ -749,7 +789,7 @@ function profileFormHTML(heading, m, isOnboarding){
 window.onPhotoPick=function(ev){
   const file=ev.target.files&&ev.target.files[0]; if(!file) return;
   const reader=new FileReader();
-  reader.onload=()=>{ PHOTO_DRAFT=reader.result; const prev=$("#photo-prev"); if(prev){ prev.style.backgroundImage=`url('${PHOTO_DRAFT}')`; prev.style.backgroundSize="cover"; prev.style.backgroundPosition="center"; prev.textContent=""; } };
+  reader.onload=()=>{ PHOTO_DRAFT=reader.result; const prev=$("#photo-prev"); if(prev){ prev.style.backgroundImage=`url('${safePhotoUrl(PHOTO_DRAFT)}')`; prev.style.backgroundSize="cover"; prev.style.backgroundPosition="center"; prev.textContent=""; } };
   reader.readAsDataURL(file);
 };
 window.clearPhoto=function(){ PHOTO_DRAFT=null; const prev=$("#photo-prev"); if(prev){ const nm=$("#f-name")?.value||ME?.name||"You"; prev.style.backgroundImage="none"; prev.setAttribute("style", avatarStyle(nm)); prev.textContent=initials(nm); } };
@@ -826,7 +866,7 @@ async function handleAuthSession(session){
   const existing = existingList && existingList.length > 0 ? existingList[0] : null;
 
   if(existing){
-    ME = { ...existing, newToo: existing.new_too, interests: existing.interests||[] };
+    ME = { ...existing, newToo: existing.new_too, interests: existing.interests||[], topics: (existing.topics&&existing.topics.length)?existing.topics:undefined, privacy: existing.privacy||{...DEFAULT_PRIVACY} };
     // Update photo from Google if they don't have one
     if(!ME.photo && photo){
       ME.photo = photo;
@@ -839,7 +879,7 @@ async function handleAuthSession(session){
       privacy: { onMap:true, city:true, office:true, school:true, interests:true, linkedin:true, email:true, availability:true }
     }).select().single();
     if(createErr){ console.error('Create user error:', createErr); return; }
-    ME = { ...created, newToo: created.new_too, interests: created.interests||[] };
+    ME = { ...created, newToo: created.new_too, interests: created.interests||[], privacy: created.privacy||{...DEFAULT_PRIVACY} };
   }
 
   await enterApp();
@@ -850,7 +890,7 @@ async function enterApp(){
 
   // Load all users
   const { data: users } = await db.from('users').select('*');
-  PEOPLE = (users||[]).filter(u => u.id !== ME.id).map(u => ({ ...u, newToo: u.new_too, interests: u.interests||[] }));
+  PEOPLE = (users||[]).filter(u => u.id !== ME.id).map(u => ({ ...u, newToo: u.new_too, interests: u.interests||[], topics: (u.topics&&u.topics.length)?u.topics:undefined }));
 
   // Load groups + members
   const { data: groups } = await db.from('groups').select('*, group_members(user_id)');
@@ -873,8 +913,8 @@ async function enterApp(){
   db.channel('users-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
       if(!ME) return;
-      const user = { ...payload.new, newToo: payload.new.new_too, interests: payload.new.interests||[] };
-      if(user.id === ME.id){ ME = user; updateMeChip(); return; }
+      const user = { ...payload.new, newToo: payload.new.new_too, interests: payload.new.interests||[], topics: (payload.new.topics&&payload.new.topics.length)?payload.new.topics:undefined };
+      if(user.id === ME.id){ ME = { ...user, privacy: user.privacy||ME.privacy||{...DEFAULT_PRIVACY} }; updateMeChip(); return; }
       const idx = PEOPLE.findIndex(p => p.id === user.id);
       if(idx >= 0) PEOPLE[idx] = user; else PEOPLE.push(user);
       renderCards(); renderMap();
