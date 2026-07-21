@@ -993,12 +993,22 @@ window.viewMyProfile=function(){
       <div style="text-align:center;padding:10px;border-radius:var(--radius-sm);background:var(--accent-tint);border:1px solid var(--accent);font-size:12px;color:var(--ink-dim)">This is how other AFEs see you</div>
     </div>
     <div class="m-foot" style="justify-content:space-between">
-      <button class="btn danger sm" onclick="deleteMyAccount()">Delete account</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn danger sm" onclick="deleteMyAccount()">Delete account</button>
+        <button class="btn ghost sm" onclick="signOutUser()">Sign out</button>
+      </div>
       <div style="display:flex;gap:8px">
         ${ME.linkedin?`<button class="btn sm linkedin" onclick="window.open(linkedinURL(ME),'_blank','noopener')"><span class="li-ic">in</span>LinkedIn</button>`:""}
         <button class="btn primary" onclick="openProfile()">Edit profile</button>
       </div>
     </div>`);
+};
+window.signOutUser=async function(){
+  if(!confirm("Sign out of Orbit?")) return;
+  await db.auth.signOut().catch(()=>{});
+  ME=null; closeModal();
+  $("#app").classList.add("hidden"); $("#login").classList.remove("hidden");
+  toast("Signed out");
 };
 // Permanently delete your account: your messages, group memberships, and profile
 // row are removed from Supabase, so your email can sign up fresh later (no dupes).
@@ -1447,10 +1457,17 @@ function locateMe(e){
   if(btn){ btn.classList.add("locating"); btn.textContent="Locating..."; }
   const done=()=>{ if(btn){ btn.classList.remove("locating"); btn.textContent="Locate me"; } };
   navigator.geolocation.getCurrentPosition(
-    pos=>{ const {latitude:lat,longitude:lng,accuracy}=pos.coords;
+    async pos=>{ const {latitude:lat,longitude:lng,accuracy}=pos.coords;
       saveCachedLocation({lat,lng,accuracy,ts:Date.now()});
       showLocation(lat,lng,accuracy);
       done();
+      // Update city to nearest hub
+      const hub = nearestHub(lat, lng);
+      if(hub && ME && ME.city !== hub){
+        ME.city = hub;
+        await db.from('users').update({ city: hub }).eq('id', ME.id);
+        renderAll();
+      }
     },
     err=>{
       done();
@@ -1729,12 +1746,21 @@ function enablePinDrop(){
   toast("Tap the map to set your location");
 
   // One-time click handler on the map
-  map.once("click", function(e){
+  map.once("click", async function(e){
     const {lat, lng} = e.latlng;
     saveCachedLocation({lat, lng, accuracy:500, ts:Date.now()});
     showLocation(lat, lng, 500);
     disablePinDrop();
-    toast("Location pinned");
+    // Update user's city to nearest hub
+    const hub = nearestHub(lat, lng);
+    if(hub && ME){
+      ME.city = hub;
+      await db.from('users').update({ city: hub }).eq('id', ME.id);
+      renderAll();
+      toast(`Location set — nearest hub: ${hub}`);
+    } else {
+      toast("Location pinned");
+    }
   });
 }
 
