@@ -211,12 +211,15 @@ function subscribeToMessages(){
       let localKey = msg.convo_key;
       if(msg.convo_key.startsWith('dm:')){
         const parts = msg.convo_key.slice(3).split(':');
+        if(!parts.includes(ME.id)) return;               // not my conversation — ignore
         const peerId = parts.find(id => id !== ME.id);
         if(!peerId) return;
         localKey = dmKey(peerId);
         ensureDM(peerId);
       } else if(msg.convo_key.startsWith('grp:')){
         const groupId = msg.convo_key.slice(4);
+        const g = GROUPS.find(x => x.id === groupId);
+        if(!g || !g.members.includes(ME.id)) return;     // not my group — ignore
         localKey = grpKey(groupId);
         ensureGroup(groupId);
       }
@@ -268,7 +271,7 @@ function openChat(key){
     <div class="chat-head">
       ${headAvatar}
       <div class="ct"><div class="t">${c.type==="group"?"☕ ":""}${esc(c.title)}</div><div class="s">${esc(sub)}</div></div>
-      ${c.type==="dm"?`<button class="btn sm linkedin" onclick="openLinkedIn('${c.peerId}')">in Connect</button>`:""}
+      ${c.type==="dm" && byId(c.peerId)?.linkedin ? `<button class="btn sm linkedin" onclick="openLinkedIn('${c.peerId}')"><span class="li-ic">in</span>Connect</button>`:""}
       <button class="x" onclick="closeChat()">×</button>
     </div>
     <div class="chat-body" id="chat-body"></div>
@@ -389,7 +392,7 @@ function renderCards(){
       ${reasons.length?`<div class="prompt">✨ <div><b>Why reach out:</b> ${reasons.slice(0,2).map(r=>r.t).join(", ")}.</div></div>`:""}
       <div class="actions">
         <button class="btn primary sm" data-act="message" data-id="${p.id}">💬 Message</button>
-        ${p.linkedin?`<button class="btn sm linkedin" data-act="linkedin" data-id="${p.id}">in Connect</button>`:""}
+        ${p.linkedin?`<button class="btn sm linkedin" data-act="linkedin" data-id="${p.id}"><span class="li-ic">in</span>Connect</button>`:""}
       </div>`;
     wrap.appendChild(card);
   }
@@ -419,7 +422,7 @@ function renderMap(){
         ${reasons.length?`<div style="margin-top:6px;color:#0a7;font-size:12px">✨ ${reasons[0].t}</div>`:""}
         <div style="display:flex;gap:6px;margin-top:9px">
           <button onclick="startDM('${p.id}')" style="flex:1;padding:7px;border:none;border-radius:8px;background:linear-gradient(180deg,#ffb27a,#ff8a4c);color:#26140a;font-weight:800;cursor:pointer">💬 Message</button>
-          ${p.linkedin?`<button onclick="openLinkedIn('${p.id}')" style="padding:7px 10px;border:none;border-radius:8px;background:#0a66c2;color:#fff;font-weight:700;cursor:pointer">in</button>`:""}
+          ${p.linkedin?`<button onclick="openLinkedIn('${p.id}')" title="Connect on LinkedIn" style="padding:7px 10px;border:none;border-radius:8px;background:#0a66c2;color:#fff;font-weight:800;cursor:pointer">in</button>`:""}
         </div>
       </div>`);
   }
@@ -506,7 +509,7 @@ function matchCardHTML(p){
       <div class="why">${why.map(r=>`<span class="r">✨ ${r.t}</span>`).join("")}</div>
       <div class="cta">
         <button class="btn primary" onclick="startDM('${p.id}')">💬 Message ${esc(p.name.split(" ")[0])}</button>
-        ${p.linkedin?`<button class="btn linkedin" onclick="openLinkedIn('${p.id}')">in Connect on LinkedIn</button>`:""}
+        ${p.linkedin?`<button class="btn linkedin" onclick="openLinkedIn('${p.id}')"><span class="li-ic">in</span>Connect on LinkedIn</button>`:""}
       </div>
     </div>`;
 }
@@ -682,7 +685,7 @@ window.viewMyProfile=function(){
     </div>
     <div class="m-foot">
       <button class="btn danger" onclick="deleteMyAccount()" style="margin-right:auto">🗑 Delete account</button>
-      ${ME.linkedin?`<button class="btn linkedin" onclick="window.open(linkedinURL(ME),'_blank','noopener')">in View my LinkedIn</button>`:""}
+      ${ME.linkedin?`<button class="btn linkedin" onclick="window.open(linkedinURL(ME),'_blank','noopener')"><span class="li-ic">in</span>View my LinkedIn</button>`:""}
       <button class="btn primary" onclick="openProfile()">✏️ Edit profile</button>
     </div>`);
 };
@@ -692,10 +695,13 @@ window.deleteMyAccount=async function(){
   if(!ME) return;
   if(!confirm(`Delete your Orbit account?\n\nThis removes your profile, messages, and group memberships permanently. You can always join again later with the same email.`)) return;
   try{
-    await db.from('messages').delete().eq('from_id', ME.id);                 // messages FK has no cascade
+    // Remove everything I sent (DMs + groups) AND both sides of my DM convos
+    // (convo_key contains my UUID for any DM I'm part of).
+    await db.from('messages').delete().or(`from_id.eq.${ME.id},convo_key.like.%${ME.id}%`);
     await db.from('groups').update({created_by:null}).eq('created_by', ME.id); // detach groups we created
     const { error } = await db.from('users').delete().eq('id', ME.id);       // group_members cascades
     if(error){ console.error(error); toast("Couldn't delete your account — try again"); return; }
+    await db.auth.signOut().catch(()=>{});                                   // end OAuth session so auto-login doesn't recreate the account
     ME=null; closeModal();
     $("#app").classList.add("hidden"); $("#login").classList.remove("hidden");
     const n=$("#lg-name"), em=$("#lg-email"); if(n) n.value=""; if(em) em.value="";
@@ -888,6 +894,13 @@ async function enterApp(){
   db.channel('users-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
       if(!ME) return;
+      if(payload.eventType === 'DELETE'){
+        // A user deleted their account — remove them from everyone's view.
+        const goneId = payload.old?.id; if(!goneId || goneId === ME.id) return;
+        const gi = PEOPLE.findIndex(p => p.id === goneId);
+        if(gi >= 0){ PEOPLE.splice(gi, 1); renderCards(); renderMap(); }
+        return;
+      }
       const user = { ...payload.new, newToo: payload.new.new_too, interests: payload.new.interests||[] };
       if(user.id === ME.id){ ME = user; updateMeChip(); return; }
       const idx = PEOPLE.findIndex(p => p.id === user.id);

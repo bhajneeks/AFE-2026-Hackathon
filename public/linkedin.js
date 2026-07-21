@@ -54,6 +54,6 @@ window.openLinkedIn=function(peerId){
     </div>
     <div class="m-foot">
       <button class="btn" onclick="copyText(document.getElementById('li-note').value)">📋 Copy note</button>
-      <button class="btn primary" onclick="window.open('${linkedinURL(p)}','_blank','noopener'); toast('Opening LinkedIn…')">in Open LinkedIn ↗</button>
+      <button class="btn primary" onclick="window.open('${linkedinURL(p)}','_blank','noopener'); toast('Opening LinkedIn…')">Open LinkedIn ↗</button>
     </div>`);
 };
