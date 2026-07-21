@@ -1873,15 +1873,25 @@ function enablePinDrop(){
   const canvases = map.getContainer().querySelectorAll("canvas");
   canvases.forEach(c=>c.style.pointerEvents="none");
 
-  function onMapClick(e){
-    saveCachedLocation({lat:e.latlng.lat, lng:e.latlng.lng, accuracy:500, ts:Date.now()});
-    showLocation(e.latlng.lat, e.latlng.lng, 500, {announce:true});
+  async function onMapClick(e){
+    const lat=e.latlng.lat, lng=e.latlng.lng;
+    saveCachedLocation({lat, lng, accuracy:500, ts:Date.now()});
+    showLocation(lat, lng, 500, {announce:true});
     disablePinDrop();
     // Restore everything
     if(markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents=""; });
     canvases.forEach(c=>c.style.pointerEvents="");
     map.off("click", onMapClick);
-    toast("Pin dropped");
+    // Update profile city to nearest hub
+    const hub = nearestHub(lat, lng);
+    if(hub && ME){
+      ME.city = hub;
+      await db.from('users').update({ city: hub }).eq('id', ME.id);
+      renderAll();
+      toast(`Moved to ${hub}`);
+    } else {
+      toast("Pin dropped");
+    }
   }
   map.on("click", onMapClick);
 }
