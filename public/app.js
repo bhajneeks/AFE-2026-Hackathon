@@ -50,35 +50,39 @@ const INTERESTS = ["backend systems","frontend","ML / AI","distributed systems",
    the full, real list, paste the atoz workplace directory export here (same
    shape: "City, ST": ["CODE1","CODE2", ...]). Anything a user types that's not
    listed is still accepted and becomes filterable. ------------------------- */
+// Buildings per hub city, shown as dropdown suggestions. Codes only, sorted.
 const BUILDINGS = {
-  "Seattle, WA":      ["SEA40","SEA41","SEA10","SEA20","SEA21","SEA22","SEA23","SEA43","SEA48","SEA61","SEA62","SEA83"],
+  "Seattle, WA":      ["SEA10","SEA20","SEA21","SEA22","SEA23","SEA33","SEA40","SEA41","SEA42","SEA43","SEA48","SEA61","SEA62","SEA83"],
   "Bellevue, WA":     ["BEL10","BEL11","BEL15","BEL25","BEL27","BEL30","BEL33"],
   "Portland, OR":     ["PDX10","PDX11","PDX12"],
   "Vancouver, BC":    ["YVR12","YVR14","YVR16"],
   "San Francisco, CA":["SFO12","SFO16","SFO18","SFO40"],
   "Sunnyvale, CA":    ["SVL10","SVL12","SVL14","SVL16"],
-  "Santa Monica, CA": ["SMF1","LADC","SNA1"],
-  "Irvine, CA":       ["IRV1","IRV7","IRV11"],
+  "Santa Monica, CA": ["LADC","SMF1","SNA1"],
+  "Irvine, CA":       ["IRV1","IRV11","IRV7"],
   "San Diego, CA":    ["SAN1","SAN10","SAN13"],
   "Tempe, AZ":        ["PHX1","PHX2","TPE1"],
   "Boulder, CO":      ["BOU1","BOU2"],
   "Denver, CO":       ["DEN1","DEN10","DEN11"],
   "Dallas, TX":       ["DAL1","DFW1","DFW7"],
-  "Austin, TX":       ["AUS1","AUS2","AUS10","AUS12"],
+  "Austin, TX":       ["AUS1","AUS10","AUS12","AUS2"],
   "Minneapolis, MN":  ["MSP1","MSP10"],
   "Chicago, IL":      ["CHI1","CHI10","ORD5"],
   "Nashville, TN":    ["BNA1","BNA2","NOC1"],
-  "Detroit, MI":      ["DTW1","DET1"],
+  "Detroit, MI":      ["DET1","DTW1"],
   "Pittsburgh, PA":   ["PIT1","PIT2"],
   "Atlanta, GA":      ["ATL1","ATL10","ATL5"],
-  "Toronto, ON":      ["YYZ12","YYZ14","TOR5"],
+  "Toronto, ON":      ["TOR5","YYZ12","YYZ14"],
   "Arlington, VA":    ["ARL01","ARL02","ARL03","ARL05"],
   "Herndon, VA":      ["HER1","HER2","IAD12"],
-  "New York, NY":     ["NYC5","NYC7","NYC8","NYC12","NYC21"],
-  "Boston, MA":       ["BOS7","BOS15","BOS27"],
+  "New York, NY":     ["NYC12","NYC21","NYC5","NYC7","NYC8"],
+  "Boston, MA":       ["BOS15","BOS27","BOS7"],
   "Remote / Virtual": []
 };
 function buildingsForCity(city){ return BUILDINGS[city] || []; }
+// Canonical form for matching: trimmed, uppercased, any parenthetical stripped —
+// so "sea33", "SEA33", and "SEA33 (extra)" all count as the same building.
+function buildingCode(s){ return (s||"").replace(/\(.*?\)/g,"").trim().toUpperCase(); }
 
 /* ---------- Seed people (fake AFE directory — mirrors supabase-seed-users.sql;
    replaced at runtime by live `users` rows in doLogin) --------------------- */
@@ -156,7 +160,7 @@ function tzOf(city){ return (CITIES[city]||{}).tz || "—"; }
 function schoolKey(s){ return (s||"").split("→")[0].trim().toLowerCase(); }
 function sameSchool(a,b){ const x=schoolKey(a); return !!x && x===schoolKey(b); }
 // Building match: case-insensitive exact match on a non-empty building code.
-function sameBuilding(a,b){ const x=(a||"").trim().toLowerCase(); return !!x && x===(b||"").trim().toLowerCase(); }
+function sameBuilding(a,b){ const x=buildingCode(a); return !!x && x===buildingCode(b); }
 
 /* avatar that supports an uploaded photo (data URL) or falls back to initials */
 // Sanitize a photo value for use inside a single-quoted CSS url(...): drop quotes,
@@ -183,7 +187,7 @@ function jitter(city, seed){
   return { lat:c.lat+dy*0.16, lng:c.lng+dx*0.20 };
 }
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-const EMOJI_MAP={bento:"🥗",microphone:"🎤",bar_chart:"📊",standing_person:"🧍",coffee:"☕"};
+const EMOJI_MAP={bento:"🥗",microphone:"🎤",bar_chart:"📊",standing_person:"🧍",coffee:"☕",green_salad:"🥗",salad:"🥗",sandwich:"🥪",ramen:"🍜",pizza:"🍕",tada:"🎉",rocket:"🚀",books:"📚",bulb:"💡",computer:"💻",game_die:"🎲",soccer:"⚽",basketball:"🏀",art:"🎨",musical_note:"🎵",camera:"📷",wave:"👋",handshake:"🤝",speech_balloon:"💬",calendar:"📅",star:"⭐",fire:"🔥"};
 function safeEmoji(e){ if(!e) return "☕"; if(e.startsWith(":")) { const k=e.replace(/:/g,""); return EMOJI_MAP[k]||"☕"; } return e; }
 
 /* ============================================================================
@@ -998,11 +1002,11 @@ window.deleteMyAccount=async function(){
 };
 $("#btn-privacy").addEventListener("click", ()=> ME && openPrivacy());
 
-let PHOTO_DRAFT=null; // holds a data URL while editing
-function openProfile(){ PHOTO_DRAFT=ME?.photo||null; showModal(profileFormHTML("Edit your profile", ME, false)); }
+let PHOTO_DRAFT; // undefined = untouched · null = removed · string = new data URL
+function openProfile(){ PHOTO_DRAFT=undefined; showModal(profileFormHTML("Edit your profile", ME, false)); }
 function profileFormHTML(heading, m, isOnboarding){
   const iv=(m?.interests)||[];
-  const photo=PHOTO_DRAFT || m?.photo || null;
+  const photo=PHOTO_DRAFT===undefined ? (m?.photo||null) : PHOTO_DRAFT;
   const avPrev = photo ? `background-image:url('${safePhotoUrl(photo)}')` : avatarStyle(m?.name||ME?.name||"You");
   const avTxt  = photo ? "" : initials(m?.name||ME?.name||"You");
   return `
@@ -1029,8 +1033,10 @@ function profileFormHTML(heading, m, isOnboarding){
         <label class="fld"><span class="lab">AFE Class</span><select id="f-afe-class"><option value="">— Select year —</option>${[2019,2020,2021,2022,2023,2024,2025,2026].map(y=>`<option value="${y}" ${m?.afe_class===String(y)?'selected':''}>AFE ${y}</option>`).join("")}</select></label>
         <label class="fld"><span class="lab">City</span><select id="f-city" onchange="refreshBuildingOptions()">${Object.keys(CITIES).map(c=>`<option ${m?.city===c?'selected':''}>${c}</option>`).join("")}</select></label>
         <label class="fld"><span class="lab">Building</span>
-          <input id="f-building" list="building-list" value="${esc(m?.building||'')}" placeholder="e.g. SEA40" autocomplete="off">
-          <datalist id="building-list">${buildingsForCity(m?.city||Object.keys(CITIES)[0]).map(b=>`<option value="${esc(b)}">`).join("")}</datalist>
+          <div style="position:relative">
+            <input id="f-building" value="${esc(m?.building||'')}" placeholder="e.g. SEA40" autocomplete="off" onfocus="showBuildingSuggest()" oninput="showBuildingSuggest()">
+            <div class="fld-suggest" id="building-suggest"></div>
+          </div>
         </label>
       </div>
       <div class="two-col">
@@ -1069,10 +1075,31 @@ window.onPhotoPick=function(ev){
 window.clearPhoto=function(){ PHOTO_DRAFT=null; const prev=$("#photo-prev"); if(prev){ const nm=$("#f-name")?.value||ME?.name||"You"; prev.style.backgroundImage="none"; prev.setAttribute("style", avatarStyle(nm)); prev.textContent=initials(nm); } };
 document.addEventListener("click", e=>{ const chip=e.target.closest("#f-interests .chip"); if(chip) chip.classList.toggle("on"); });
 // When the city changes in the profile form, refresh the building autocomplete list.
-window.refreshBuildingOptions=function(){
-  const city=$("#f-city")?.value, dl=$("#building-list"); if(!dl) return;
-  dl.innerHTML=buildingsForCity(city).map(b=>`<option value="${esc(b)}">`).join("");
+window.refreshBuildingOptions=function(){ showBuildingSuggest(); };
+// One flat alphabetical list of ALL codes; free text is always allowed.
+function allBuildingCodes(){
+  return [...new Set(Object.values(BUILDINGS).flat())].sort((a,b)=>a.localeCompare(b));
+}
+// Scrollable, height-capped suggestion panel under the building input (same
+// pattern as the map's city search). Filters as you type; empty shows all.
+window.showBuildingSuggest=function(){
+  const input=$("#f-building"), panel=$("#building-suggest"); if(!input||!panel) return;
+  const q=input.value.trim().toUpperCase();
+  const codes=allBuildingCodes().filter(c=>!q || c.toUpperCase().includes(q));
+  if(!codes.length){ panel.classList.remove("open"); return; }
+  panel.innerHTML=codes.map(c=>`<div class="opt" onmousedown="pickBuilding('${esc(c)}')">${esc(c)}</div>`).join("");
+  panel.classList.add("open");
 };
+window.pickBuilding=function(code){
+  const input=$("#f-building"), panel=$("#building-suggest");
+  if(input) input.value=code;
+  if(panel) panel.classList.remove("open");
+};
+document.addEventListener("click", e=>{
+  const panel=$("#building-suggest");
+  if(panel && !e.target.closest("#f-building") && !e.target.closest("#building-suggest")) panel.classList.remove("open");
+});
+function currentBuildingValue(){ return $("#f-building")?.value.trim()||""; }
 
 window.saveProfile=async function(isOnboarding){
   const name=$("#f-name").value.trim(); if(!name){ toast("Add your name to continue"); return; }
@@ -1081,10 +1108,10 @@ window.saveProfile=async function(isOnboarding){
   ME={
     ...ME,
     name, track:$("#f-track").value, afe_class:$("#f-afe-class")?.value||'', city:$("#f-city").value, school:$("#f-school").value,
-    org:$("#f-org").value, building:$("#f-building").value.trim(), email:$("#f-email").value.trim(), linkedin:li,
+    org:$("#f-org").value, building:currentBuildingValue(), email:$("#f-email").value.trim(), linkedin:li,
     avail:$("#f-avail").value, newToo:$("#f-new").value==="yes",
     interests:$$("#f-interests .chip.on").map(c=>c.dataset.i),
-    photo:PHOTO_DRAFT || ME?.photo || null,
+    photo:PHOTO_DRAFT===undefined ? (ME?.photo||null) : PHOTO_DRAFT,
     privacy: ME?.privacy || {...DEFAULT_PRIVACY}
   };
   // Persist to Supabase
@@ -1557,7 +1584,7 @@ async function enterApp(){
   if(!map) initMap(); else setTimeout(()=>map.invalidateSize(),60);
   buildFilterChips();
   renderAll();
-  PHOTO_DRAFT=null;
+  PHOTO_DRAFT=undefined;
 
   // Load existing conversations so inbox is populated on refresh
   await loadAllConversations();
@@ -1608,7 +1635,7 @@ function currentTheme(){
 function applyTheme(theme){
   document.documentElement.setAttribute("data-theme", theme);
   const btn=$("#btn-theme");
-  if(btn){ btn.textContent = theme==="light" ? "☀️" : ""; btn.title = `Switch to ${theme==="light"?"dark":"light"} mode`; }
+  if(btn){ btn.textContent = theme==="light" ? "☀️" : "🌙"; btn.title = `Switch to ${theme==="light"?"dark":"light"} mode`; }
   setMapTiles(theme); // swap Leaflet basemap to match
   updateGlobeTheme();
 }
