@@ -1366,15 +1366,22 @@ window.saveProfile=async function(isOnboarding){
   const name=$("#f-name").value.trim(); if(!name){ toast("Add your name to continue"); return; }
   const li=normalizeLinkedIn($("#f-linkedin").value);
   if(li===null){ toast("That LinkedIn doesn't look right — paste your profile URL or just your handle"); $("#f-linkedin").focus(); return; }
+  const prevCity = ME?.city;
+  const newCity = $("#f-city").value;
   ME={
     ...ME,
-    name, track:$("#f-track").value, afe_class:$("#f-afe-class")?.value||'', city:$("#f-city").value, school:$("#f-school").value,
+    name, track:$("#f-track").value, afe_class:$("#f-afe-class")?.value||'', city:newCity, school:$("#f-school").value,
     org:$("#f-org").value, building:currentBuildingValue(), email:$("#f-email").value.trim(), linkedin:li,
     avail:$("#f-avail").value, newToo:$("#f-new").value==="yes",
     interests:$$("#f-interests .chip.on").map(c=>c.dataset.i),
     photo:PHOTO_DRAFT===undefined ? (ME?.photo||null) : PHOTO_DRAFT,
     privacy: ME?.privacy || {...DEFAULT_PRIVACY}
   };
+  // If city changed, clear the old pin-drop so the map moves to the new city
+  if(prevCity && newCity !== prevCity){
+    localStorage.removeItem(MYLOC_KEY);
+    if(pinLayer) pinLayer.clearLayers();
+  }
   // Persist to Supabase
   const payload = {
     name: ME.name, track: ME.track, city: ME.city, school: ME.school, org: ME.org, building: ME.building,
@@ -1719,9 +1726,6 @@ function locateMe(e){
   );
 }
 function locateFallbackToCity(){
-  // If user already has a pin-drop, use that instead of overriding with city center
-  const existing = getCachedLocation();
-  if(existing){ showLocation(existing.lat, existing.lng, existing.accuracy||500, {announce:true}); return; }
   if(ME && ME.city && CITIES[ME.city] && ME.city!=="Remote / Virtual"){
     const c=CITIES[ME.city];
     showLocation(c.lat, c.lng, 2000, {announce:true});
@@ -1961,6 +1965,7 @@ function obNext(){
   if(obStep === 3){
     const city = $("#ob-city").value;
     const building = $("#ob-building").value.trim();
+    if(city && city !== ME.city) localStorage.removeItem(MYLOC_KEY);
     if(city) ME.city = city;
     if(building) ME.building = building;
   }
