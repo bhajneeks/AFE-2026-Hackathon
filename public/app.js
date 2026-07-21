@@ -337,6 +337,11 @@ function updateMsgBadge(){
   const n=totalUnread();
   tab.innerHTML = `<span>Messages</span>${n?`<span class="badge">${n}</span>`:""}`;
 }
+let newGroupCount=0; // groups I was added to since I last opened the Groups tab
+function updateGroupsBadge(){
+  const tab=$("#tab-groups"); if(!tab) return;
+  tab.innerHTML = `<span>Groups</span>${newGroupCount?`<span class="badge">${newGroupCount}</span>`:""}`;
+}
 
 /* ---------- Chat modal ---------- */
 function openChat(key){
@@ -968,6 +973,7 @@ function wireTabs(){
     if(state.view==="map" && map) setTimeout(()=>map.invalidateSize(),60);
     if(state.view==="speed") renderSpeed();
     if(state.view==="messages") renderInbox();
+    if(state.view==="groups"){ newGroupCount=0; updateGroupsBadge(); }
   });
 }
 
@@ -1986,6 +1992,38 @@ async function enterApp(){
       const idx = PEOPLE.findIndex(p => p.id === user.id);
       if(idx >= 0) PEOPLE[idx] = user; else PEOPLE.push(user);
       renderCards(); renderMap();
+    })
+    .subscribe();
+
+  // Subscribe to group membership changes — so being invited to a group (or removed)
+  // shows up live without a reload.
+  db.channel('group-members-realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_members' }, async (payload) => {
+      if(!ME) return;
+      const { group_id, user_id } = payload.new || {};
+      if(!group_id || user_id !== ME.id) return;       // only care about groups I was added to
+      let g = GROUPS.find(x=>x.id===group_id);
+      if(g){
+        if(!g.members.includes(ME.id)) g.members.push(ME.id);
+      } else {
+        // A group I'd never loaded (e.g. a private one) — fetch it now.
+        const { data } = await db.from('groups').select('*, group_members(user_id)').eq('id', group_id).single();
+        if(!data) return;
+        g = { id:data.id, emoji:data.emoji, title:data.title, desc:data.description, city:data.city,
+              private:data.private||false, members:(data.group_members||[]).map(m=>m.user_id) };
+        GROUPS.unshift(g); ensureGroup(g.id);
+      }
+      renderGroups();
+      if(state.view!=="groups"){ newGroupCount++; updateGroupsBadge(); }
+      toast(`You were added to "${g.title}" 👋`);
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'group_members' }, (payload) => {
+      if(!ME) return;
+      const { group_id, user_id } = payload.old || {};
+      if(!group_id || user_id !== ME.id) return;        // only care about my own removals
+      const g = GROUPS.find(x=>x.id===group_id); if(!g) return;
+      g.members = g.members.filter(id=>id!==ME.id);
+      renderGroups();
     })
     .subscribe();
 
