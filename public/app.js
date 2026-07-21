@@ -1053,6 +1053,7 @@ function setMapTiles(theme){
 }
 function initMap(){
   map=L.map("map",{ zoomControl:true, attributionControl:false }).setView([44,-100],4);
+  map.zoomControl.setPosition("topright");
   setMapTiles(currentTheme());
   markerLayer=L.layerGroup().addTo(map);
   renderMap();
