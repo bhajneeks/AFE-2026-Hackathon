@@ -1600,6 +1600,7 @@ function wireMapTools(){
 // --- Google OAuth login ---
 async function signInWithGoogle(){
   localStorage.removeItem("orbit-deleted");
+  sessionStorage.setItem("orbit-fresh-signin", "1");
   const { error } = await db.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.origin + window.location.pathname }
@@ -1644,7 +1645,15 @@ async function handleAuthSession(session){
       await db.from('users').update({ photo }).eq('id', ME.id);
     }
   } else {
-    // Use upsert to prevent duplicates on email
+    // No user row found. Only create if this is a fresh Google redirect (not a stale session).
+    // A stale session after account deletion should NOT recreate the user.
+    const isFreshRedirect = window.location.hash.includes('access_token') || sessionStorage.getItem("orbit-fresh-signin");
+    if(!isFreshRedirect){
+      // Stale session with no user row = deleted account. Sign out and show login.
+      await db.auth.signOut().catch(()=>{});
+      return;
+    }
+    sessionStorage.removeItem("orbit-fresh-signin");
     const { data: created, error: createErr } = await db.from('users').upsert({
       name, email, track: 'SDE', city: 'Seattle, WA', school: '', org: '', linkedin: '',
       avail: 'coffee', new_too: true, interests: [], bio: '', photo,
