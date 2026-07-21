@@ -383,26 +383,40 @@ window.addMemberToGroup=function(gid){
   const nonMembers=PEOPLE.filter(p=>!g.members.includes(p.id));
   if(!nonMembers.length){ toast("Everyone is already in this group"); return; }
   showModal(`
-    <div class="m-head"><h2>Add member</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="m-head"><h2>Invite to "${esc(g.title)}"</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="m-body">
-      <p class="muted" style="margin-bottom:12px">Select someone to add to "${esc(g.title)}"</p>
-      <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
-        ${nonMembers.slice(0,20).map(p=>`
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);cursor:pointer" onclick="confirmAddMember('${gid}','${p.id}')">
-            ${avatarHTML(p,"av")}
-            <div><strong>${esc(p.name)}</strong>${shows(p,"city")?`<br><span class="muted" style="font-size:12px">${esc(p.city)}</span>`:""}</div>
-          </div>`).join("")}
+      ${g.private?`<p class="muted" style="margin-bottom:10px">This is a private group — people can only join when you invite them.</p>`:`<p class="muted" style="margin-bottom:10px">Add someone to this group.</p>`}
+      <div class="search" style="margin-bottom:12px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <input id="invite-search" placeholder="Search people…" autocomplete="off" oninput="filterInvite('${gid}')">
       </div>
+      <div id="invite-list" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px"></div>
     </div>`);
+  filterInvite(gid);
+};
+window.filterInvite=function(gid){
+  const g=GROUPS.find(x=>x.id===gid); if(!g) return;
+  const q=($("#invite-search")?.value||"").trim().toLowerCase();
+  const nonMembers=PEOPLE.filter(p=>!g.members.includes(p.id) &&
+    (!q || [p.name,p.city,p.org,p.school].filter(Boolean).join(" ").toLowerCase().includes(q)));
+  const list=$("#invite-list"); if(!list) return;
+  list.innerHTML = nonMembers.length ? nonMembers.slice(0,30).map(p=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);cursor:pointer" onclick="confirmAddMember('${gid}','${p.id}')">
+      ${avatarHTML(p,"av")}
+      <div style="flex:1"><strong>${esc(p.name)}</strong>${shows(p,"city")?`<br><span class="muted" style="font-size:12px">${esc(p.city)}</span>`:""}</div>
+      <span class="btn sm">Invite</span>
+    </div>`).join("") : `<p class="muted" style="padding:8px">No one matches.</p>`;
 };
 window.confirmAddMember=async function(gid,uid){
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
   const p=byId(uid); if(!p) return;
   const { error }=await db.from('group_members').insert({group_id:gid,user_id:uid});
-  if(error){ toast("Couldn't add — try again"); return; }
+  if(error){ toast("Couldn't invite — try again"); return; }
   g.members.push(uid);
-  closeModal(); renderGroups();
-  toast(`Added ${p.name} to the group`);
+  renderGroups();
+  toast(`Invited ${p.name} ✓`);
+  // Keep the invite modal open (if still shown) so several people can be added in a row.
+  if($("#invite-list")) filterInvite(gid); else closeModal();
 };
 window.leaveGroup=async function(gid){
   if(!ME) return;
@@ -811,8 +825,9 @@ function renderGroups(){
         </div>
         <span class="muted" style="font-size:12px">${mem.length} members</span>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn ${joined?'':'primary'}" style="flex:1" data-group="${g.id}">${joined?'✓ Joined':'Join brown bag'}</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ${joined?'':'primary'}" style="flex:1;min-width:110px" data-group="${g.id}">${joined?'✓ Joined':(g.private?'Private group':'Join brown bag')}</button>
+        ${joined?`<button class="btn" data-invite="${g.id}" title="Invite people to this group"><span class="li-ic" style="background:none;color:inherit">＋</span>Invite</button>`:""}
         ${joined?`<button class="btn primary" data-openchat="${g.id}">Open chat</button>`:""}
       </div>`;
     wrap.appendChild(card);
@@ -965,6 +980,8 @@ document.addEventListener("click", e=>{
     if(a.dataset.act==="message")  startDM(p.id);
     if(a.dataset.act==="linkedin") openLinkedIn(p.id);
   }
+  const inv=e.target.closest("[data-invite]");
+  if(inv){ addMemberToGroup(inv.dataset.invite); return; }
   const g=e.target.closest("[data-group]");
   if(g) joinGroup(g.dataset.group);
   const oc=e.target.closest("[data-openchat]");
