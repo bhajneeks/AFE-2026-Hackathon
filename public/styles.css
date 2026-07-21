@@ -465,6 +465,10 @@
   .group-card:nth-child(6) { animation-delay:.3s; }
   .group-card:hover { transform:translateY(-6px); border-color:var(--accent); box-shadow:0 22px 48px rgba(255,153,0,.16), 0 8px 18px rgba(0,0,0,.08); }
   .group-card:hover::after { transform:scaleX(1); }
+  /* Invited (pending) group cards stand out with an orange border + flag. */
+  .group-card.invited { border-color:var(--accent); background:linear-gradient(180deg,var(--accent-tint),var(--bg-soft)); }
+  .group-card.invited::after { transform:scaleX(1); }
+  .invite-flag { align-self:flex-start; background:var(--accent); color:#26140a; font-size:11px; font-weight:800; letter-spacing:.4px; padding:3px 10px; border-radius:999px; }
   .group-card .emoji { font-size:28px; }
   .group-card .title { font-family:var(--font-display); font-weight:800; font-size:17px; letter-spacing:-.3px; }
   .group-card .members { display:flex; align-items:center; }

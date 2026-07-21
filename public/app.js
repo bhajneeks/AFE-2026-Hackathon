@@ -236,6 +236,16 @@ function ensureDM(peerId){
   if(!CONVOS[key]){ const p=byId(peerId); CONVOS[key]={ key, type:"dm", peerId, title:p?p.name:"", messages:[], unread:0 }; }
   return CONVOS[key];
 }
+// Split a group row's membership into accepted members vs pending (invited) users.
+// Rows without a status (pre-migration) are treated as accepted members.
+function mapGroupRow(g){
+  const rows=g.group_members||[];
+  return {
+    id: g.id, emoji: g.emoji, title: g.title, desc: g.description, city: g.city, private: g.private||false,
+    members: rows.filter(m=>(m.status||'member')!=='pending').map(m=>m.user_id),
+    pending: rows.filter(m=>m.status==='pending').map(m=>m.user_id)
+  };
+}
 function ensureGroup(groupId){
   const key=grpKey(groupId);
   if(!CONVOS[key]){ const g=GROUPS.find(x=>x.id===groupId); CONVOS[key]={ key, type:"group", groupId, title:g?g.title:"", messages:[], unread:0 }; }
@@ -337,10 +347,12 @@ function updateMsgBadge(){
   const n=totalUnread();
   tab.innerHTML = `<span>Messages</span>${n?`<span class="badge">${n}</span>`:""}`;
 }
-let newGroupCount=0; // groups I was added to since I last opened the Groups tab
+// Badge = number of pending group invites awaiting my response.
+function pendingInviteCount(){ return ME ? GROUPS.filter(g=>(g.pending||[]).includes(ME.id)).length : 0; }
 function updateGroupsBadge(){
   const tab=$("#tab-groups"); if(!tab) return;
-  tab.innerHTML = `<span>Groups</span>${newGroupCount?`<span class="badge">${newGroupCount}</span>`:""}`;
+  const n=pendingInviteCount();
+  tab.innerHTML = `<span>Groups</span>${n?`<span class="badge">${n}</span>`:""}`;
 }
 
 /* ---------- Chat modal ---------- */
@@ -385,8 +397,9 @@ function openChat(key){
 function closeChat(){ OPEN_CHAT=null; $("#modal").className="modal"; closeModal(); refreshMessagingUI(); }
 window.addMemberToGroup=function(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
-  const nonMembers=PEOPLE.filter(p=>!g.members.includes(p.id));
-  if(!nonMembers.length){ toast("Everyone is already in this group"); return; }
+  const taken=new Set([...(g.members||[]),...(g.pending||[])]);
+  const nonMembers=PEOPLE.filter(p=>!taken.has(p.id));
+  if(!nonMembers.length){ toast("Everyone's already in or invited"); return; }
   showModal(`
     <div class="m-head"><h2>Invite to "${esc(g.title)}"</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="m-body">
@@ -402,22 +415,26 @@ window.addMemberToGroup=function(gid){
 window.filterInvite=function(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
   const q=($("#invite-search")?.value||"").trim().toLowerCase();
-  const nonMembers=PEOPLE.filter(p=>!g.members.includes(p.id) &&
+  const pending=new Set(g.pending||[]);
+  const candidates=PEOPLE.filter(p=>!g.members.includes(p.id) &&
     (!q || [p.name,p.city,p.org,p.school].filter(Boolean).join(" ").toLowerCase().includes(q)));
   const list=$("#invite-list"); if(!list) return;
-  list.innerHTML = nonMembers.length ? nonMembers.slice(0,30).map(p=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);cursor:pointer" onclick="confirmAddMember('${gid}','${p.id}')">
+  list.innerHTML = candidates.length ? candidates.slice(0,30).map(p=>{
+    const invited=pending.has(p.id);
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);${invited?'opacity:.6':'cursor:pointer'}" ${invited?'':`onclick="confirmAddMember('${gid}','${p.id}')"`}>
       ${avatarHTML(p,"av")}
       <div style="flex:1"><strong>${esc(p.name)}</strong>${shows(p,"city")?`<br><span class="muted" style="font-size:12px">${esc(p.city)}</span>`:""}</div>
-      <span class="btn sm">Invite</span>
-    </div>`).join("") : `<p class="muted" style="padding:8px">No one matches.</p>`;
+      <span class="btn sm">${invited?'Invited ✓':'Invite'}</span>
+    </div>`;}).join("") : `<p class="muted" style="padding:8px">No one matches.</p>`;
 };
 window.confirmAddMember=async function(gid,uid){
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
   const p=byId(uid); if(!p) return;
-  const { error }=await db.from('group_members').insert({group_id:gid,user_id:uid});
+  // Invite = pending until they accept. They aren't a member yet.
+  const { error }=await db.from('group_members').insert({group_id:gid,user_id:uid,status:'pending'});
   if(error){ toast("Couldn't invite — try again"); return; }
-  g.members.push(uid);
+  (g.pending=g.pending||[]).push(uid);
   renderGroups();
   toast(`Invited ${p.name} ✓`);
   // Keep the invite modal open (if still shown) so several people can be added in a row.
@@ -812,15 +829,21 @@ window.resetDeck=function(){
 /* ---------- Groups ---------- */
 function renderGroups(){
   const wrap=$("#groups"); wrap.innerHTML="";
-  for(const g of GROUPS){
-    if(g.private && ME && !g.members.includes(ME.id)) continue;
-    const mem=g.members.map(byId).filter(Boolean);
+  // Show pending invites first, then the rest.
+  const invited=g=>ME && (g.pending||[]).includes(ME.id);
+  const ordered=[...GROUPS].sort((a,b)=>(invited(b)?1:0)-(invited(a)?1:0));
+  for(const g of ordered){
+    const iAmInvited=invited(g);
     const joined=ME && g.members.includes(ME.id);
-    const card=document.createElement("div"); card.className="group-card";
+    // Hide private groups I'm neither in nor invited to.
+    if(g.private && !joined && !iAmInvited) continue;
+    const mem=g.members.map(byId).filter(Boolean);
+    const card=document.createElement("div"); card.className=`group-card${iAmInvited?' invited':''}`;
     card.innerHTML=`
+      ${iAmInvited?`<div class="invite-flag">✉ You're invited</div>`:""}
       <div style="display:flex;gap:12px;align-items:center">
         <div class="emoji">${safeEmoji(g.emoji)}</div>
-        <div style="flex:1"><div class="title">${esc(g.title)}${g.private?` <span style="font-size:10px;opacity:.6"></span>`:""}</div>${g.city?`<div class="muted" style="font-size:12px">${esc(g.city)}</div>`:`<div class="muted" style="font-size:12px">Anywhere</div>`}</div>
+        <div style="flex:1"><div class="title">${esc(g.title)}${g.private?` 🔒`:""}</div>${g.city?`<div class="muted" style="font-size:12px">${esc(g.city)}</div>`:`<div class="muted" style="font-size:12px">Anywhere</div>`}</div>
       </div>
       <div class="muted">${esc(g.desc)}</div>
       <div style="display:flex;align-items:center;justify-content:space-between">
@@ -831,15 +854,38 @@ function renderGroups(){
         <span class="muted" style="font-size:12px">${mem.length} members</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn ${joined?'':'primary'}" style="flex:1;min-width:110px" data-group="${g.id}">${joined?'✓ Joined':(g.private?'Private group':'Join brown bag')}</button>
-        ${joined?`<button class="btn" data-invite="${g.id}" title="Invite people to this group"><span class="li-ic" style="background:none;color:inherit">＋</span>Invite</button>`:""}
-        ${joined?`<button class="btn primary" data-openchat="${g.id}">Open chat</button>`:""}
+        ${iAmInvited?`
+          <button class="btn primary" style="flex:1;min-width:110px" data-accept="${g.id}">Accept</button>
+          <button class="btn" data-decline="${g.id}">Decline</button>
+        `:`
+          <button class="btn ${joined?'':'primary'}" style="flex:1;min-width:110px" data-group="${g.id}">${joined?'✓ Joined':(g.private?'Private group':'Join brown bag')}</button>
+          ${joined?`<button class="btn" data-invite="${g.id}" title="Invite people to this group"><span class="li-ic" style="background:none;color:inherit">＋</span>Invite</button>`:""}
+          ${joined?`<button class="btn primary" data-openchat="${g.id}">Open chat</button>`:""}
+        `}
       </div>`;
     wrap.appendChild(card);
   }
 }
+window.acceptInvite=async function(gid){
+  if(!ME) return;
+  const g=GROUPS.find(x=>x.id===gid); if(!g) return;
+  const { error }=await db.from('group_members').update({status:'member'}).eq('group_id',gid).eq('user_id',ME.id);
+  if(error){ console.error('acceptInvite failed:', error); toast("Couldn't accept — try again"); return; }
+  g.pending=(g.pending||[]).filter(id=>id!==ME.id);
+  if(!g.members.includes(ME.id)) g.members.push(ME.id);
+  renderGroups(); updateGroupsBadge(); toast(`Joined "${g.title}" ✓`);
+  openGroupChat(gid);
+};
+window.declineInvite=async function(gid){
+  if(!ME) return;
+  const g=GROUPS.find(x=>x.id===gid); if(!g) return;
+  const { error }=await db.from('group_members').delete().eq('group_id',gid).eq('user_id',ME.id);
+  if(error){ console.error('declineInvite failed:', error); toast("Couldn't decline — try again"); return; }
+  g.pending=(g.pending||[]).filter(id=>id!==ME.id);
+  renderGroups(); updateGroupsBadge(); toast("Invite declined");
+};
 
-function renderAll(){ renderCards(); renderMap(); renderSpeed(); renderGroups(); updateMeChip(); updateMsgBadge(); }
+function renderAll(){ renderCards(); renderMap(); renderSpeed(); renderGroups(); updateMeChip(); updateMsgBadge(); updateGroupsBadge(); }
 
 /* ============================================================================
    FILTER UI
@@ -973,7 +1019,6 @@ function wireTabs(){
     if(state.view==="map" && map) setTimeout(()=>map.invalidateSize(),60);
     if(state.view==="speed") renderSpeed();
     if(state.view==="messages") renderInbox();
-    if(state.view==="groups"){ newGroupCount=0; updateGroupsBadge(); }
   });
 }
 
@@ -986,6 +1031,10 @@ document.addEventListener("click", e=>{
     if(a.dataset.act==="message")  startDM(p.id);
     if(a.dataset.act==="linkedin") openLinkedIn(p.id);
   }
+  const acc=e.target.closest("[data-accept]");
+  if(acc){ acceptInvite(acc.dataset.accept); return; }
+  const dec=e.target.closest("[data-decline]");
+  if(dec){ declineInvite(dec.dataset.decline); return; }
   const inv=e.target.closest("[data-invite]");
   if(inv){ addMemberToGroup(inv.dataset.invite); return; }
   const g=e.target.closest("[data-group]");
@@ -1074,8 +1123,8 @@ window.createGroup=async function(){
     emoji: $("#g-emoji").value||"☕", title, description: $("#g-desc").value||"", city: $("#g-city").value, created_by: ME.id, private: isPrivate
   }).select().single();
   if(data){
-    await db.from('group_members').insert({ group_id: data.id, user_id: ME.id });
-    const group = { id: data.id, emoji: data.emoji, title: data.title, desc: data.description, city: data.city, members: [ME.id], private: data.private };
+    await db.from('group_members').insert({ group_id: data.id, user_id: ME.id, status:'member' });
+    const group = { id: data.id, emoji: data.emoji, title: data.title, desc: data.description, city: data.city, members: [ME.id], pending: [], private: data.private };
     GROUPS.unshift(group); ensureGroup(group.id);
     closeModal(); renderGroups(); toast(`Created "${title}" ✓`);
     openGroupChat(group.id);
@@ -1954,11 +2003,8 @@ async function enterApp(){
   PEOPLE = (users||[]).filter(u => u.id !== ME.id).map(u => ({ ...u, newToo: u.new_too, interests: u.interests||[], topics: (u.topics&&u.topics.length)?u.topics:undefined }));
 
   // Load groups + members
-  const { data: groups } = await db.from('groups').select('*, group_members(user_id)');
-  GROUPS = (groups||[]).map(g => ({
-    id: g.id, emoji: g.emoji, title: g.title, desc: g.description, city: g.city,
-    private: g.private||false, members: (g.group_members||[]).map(m => m.user_id)
-  }));
+  const { data: groups } = await db.from('groups').select('*, group_members(user_id,status)');
+  GROUPS = (groups||[]).map(g => mapGroupRow(g));
 
   $("#login").classList.add("hidden");
   $("#app").classList.remove("hidden");
@@ -1995,27 +2041,27 @@ async function enterApp(){
     })
     .subscribe();
 
-  // Subscribe to group membership changes — so being invited to a group (or removed)
-  // shows up live without a reload.
+  // Subscribe to group membership changes — so an invite (or removal) shows up live.
   db.channel('group-members-realtime')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_members' }, async (payload) => {
       if(!ME) return;
-      const { group_id, user_id } = payload.new || {};
-      if(!group_id || user_id !== ME.id) return;       // only care about groups I was added to
+      const { group_id, user_id, status } = payload.new || {};
+      if(!group_id || user_id !== ME.id) return;       // only care about rows for me
       let g = GROUPS.find(x=>x.id===group_id);
-      if(g){
-        if(!g.members.includes(ME.id)) g.members.push(ME.id);
-      } else {
+      if(!g){
         // A group I'd never loaded (e.g. a private one) — fetch it now.
-        const { data } = await db.from('groups').select('*, group_members(user_id)').eq('id', group_id).single();
+        const { data } = await db.from('groups').select('*, group_members(user_id,status)').eq('id', group_id).single();
         if(!data) return;
-        g = { id:data.id, emoji:data.emoji, title:data.title, desc:data.description, city:data.city,
-              private:data.private||false, members:(data.group_members||[]).map(m=>m.user_id) };
-        GROUPS.unshift(g); ensureGroup(g.id);
+        g = mapGroupRow(data); GROUPS.unshift(g); ensureGroup(g.id);
       }
-      renderGroups();
-      if(state.view!=="groups"){ newGroupCount++; updateGroupsBadge(); }
-      toast(`You were added to "${g.title}" 👋`);
+      if(status==='pending'){
+        if(!(g.pending||[]).includes(ME.id)) (g.pending=g.pending||[]).push(ME.id);
+        renderGroups(); updateGroupsBadge();
+        toast(`You've been invited to "${g.title}" — tap Groups to respond`);
+      } else {
+        if(!g.members.includes(ME.id)) g.members.push(ME.id);
+        renderGroups();
+      }
     })
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'group_members' }, (payload) => {
       if(!ME) return;
@@ -2023,6 +2069,7 @@ async function enterApp(){
       if(!group_id || user_id !== ME.id) return;        // only care about my own removals
       const g = GROUPS.find(x=>x.id===group_id); if(!g) return;
       g.members = g.members.filter(id=>id!==ME.id);
+      g.pending = (g.pending||[]).filter(id=>id!==ME.id);
       renderGroups();
     })
     .subscribe();

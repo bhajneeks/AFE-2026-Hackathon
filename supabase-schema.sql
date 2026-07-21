@@ -49,8 +49,12 @@ CREATE TABLE IF NOT EXISTS group_members (
   group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   joined_at TIMESTAMPTZ DEFAULT now(),
+  -- 'member' = accepted/active. 'pending' = invited, awaiting accept/decline.
+  status TEXT NOT NULL DEFAULT 'member',
   PRIMARY KEY (group_id, user_id)
 );
+-- Migration for existing DBs (safe to re-run): add the status column.
+ALTER TABLE group_members ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'member';
 
 -- Enable Row Level Security (permissive for hackathon)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
