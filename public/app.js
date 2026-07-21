@@ -644,6 +644,7 @@ function buildBuildingChips(){
   bf.innerHTML="";
   if(!list.length){ bf.innerHTML=`<span class="muted" style="font-size:12px">No buildings yet</span>`; return; }
   list.forEach(b=>{ const s=document.createElement("span"); s.className="chip"+(state.buildings.has(b)?" on":""); s.dataset.building=b; s.textContent="🏢 "+b; bf.appendChild(s); });
+  if(typeof updateFilterCounts==="function") updateFilterCounts();
 }
 function wireFilters(){
   $("#q").addEventListener("input", e=>{ state.q=e.target.value; renderCards(); renderMap(); });
@@ -652,9 +653,75 @@ function wireFilters(){
   $("#city-filters").addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c) toggleSet(state.cities,c.dataset.city,c); });
   $("#building-filters").addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c&&c.dataset.building) toggleSet(state.buildings,c.dataset.building,c); });
   $("#interest-filters").addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c) toggleSet(state.interests,c.dataset.interest,c); });
-  $("#reset").addEventListener("click", ()=>{ state.quick.clear(); state.tracks.clear(); state.cities.clear(); state.buildings.clear(); state.interests.clear(); state.q=""; $("#q").value=""; $$(".chip").forEach(c=>c.classList.remove("on")); renderCards(); renderMap(); });
+  $("#reset").addEventListener("click", ()=>{ state.quick.clear(); state.tracks.clear(); state.cities.clear(); state.buildings.clear(); state.interests.clear(); state.q=""; $("#q").value=""; $$(".chip").forEach(c=>c.classList.remove("on")); $$(".fg-search").forEach(s=>{s.value="";}); $$(".chip").forEach(c=>c.classList.remove("hidden")); updateFilterCounts(); renderCards(); renderMap(); });
+
+  // Per-section search: filter the chips WITHIN a group by typed text.
+  const wireSectionSearch = (inputId, containerId, attr) => {
+    const inp=$("#"+inputId); if(!inp) return;
+    inp.addEventListener("input", ()=>{
+      const q=inp.value.trim().toLowerCase();
+      const chips=$$("#"+containerId+" .chip");
+      let shown=0;
+      chips.forEach(c=>{ const v=(c.dataset[attr]||c.textContent||"").toLowerCase(); const hit=!q||v.includes(q); c.classList.toggle("hidden", !hit); if(hit) shown++; });
+      // show a tiny "no match" note
+      const box=$("#"+containerId); let note=box.querySelector(".fg-empty");
+      if(!shown){ if(!note){ note=document.createElement("div"); note.className="fg-empty"; box.appendChild(note); } note.textContent="No matches"; }
+      else if(note){ note.remove(); }
+    });
+    // Enter opens nothing / stays; clicking a chip is unaffected.
+    inp.addEventListener("click", e=>e.stopPropagation());
+  };
+  wireSectionSearch("city-search","city-filters","city");
+  wireSectionSearch("building-search","building-filters","building");
+  wireSectionSearch("interest-search","interest-filters","interest");
+
+  updateFilterCounts();
 }
-function toggleSet(set,key,el){ if(set.has(key)){ set.delete(key); el.classList.remove("on"); } else { set.add(key); el.classList.add("on"); } renderCards(); renderMap(); }
+function toggleSet(set,key,el){ if(set.has(key)){ set.delete(key); el.classList.remove("on"); } else { set.add(key); el.classList.add("on"); } updateFilterCounts(); renderCards(); renderMap(); }
+
+// Show how many filters are active per group, as a badge on the group header.
+function updateFilterCounts(){
+  const counts={ quick:state.quick.size, track:state.tracks.size, city:state.cities.size, building:state.buildings.size, interest:state.interests.size };
+  $$(".fg-count").forEach(b=>{ const n=counts[b.dataset.countFor]||0; b.textContent=n; b.classList.toggle("on", n>0); });
+}
+
+/* ---------- Resizable sidebar (drag handle + persisted width) ---------- */
+const SIDEBAR_W_KEY="orbit-sidebar-w";
+function wireSidebarResize(){
+  const sidebar=$("#sidebar"), handle=$("#sidebar-resizer"); if(!sidebar||!handle) return;
+  // restore saved width
+  const saved=parseInt(localStorage.getItem(SIDEBAR_W_KEY)||"",10);
+  if(saved && saved>=220 && saved<=560) sidebar.style.setProperty("--sidebar-w", saved+"px");
+  let startX=0, startW=0, dragging=false;
+  const MIN=220, MAX=560;
+  const onMove=(e)=>{
+    if(!dragging) return;
+    const x=(e.touches?e.touches[0].clientX:e.clientX);
+    let w=Math.min(MAX, Math.max(MIN, startW + (x-startX)));
+    sidebar.style.setProperty("--sidebar-w", w+"px");
+    if(map) map.invalidateSize();
+  };
+  const onUp=()=>{
+    if(!dragging) return;
+    dragging=false; sidebar.classList.remove("resizing");
+    document.removeEventListener("mousemove",onMove); document.removeEventListener("mouseup",onUp);
+    document.removeEventListener("touchmove",onMove); document.removeEventListener("touchend",onUp);
+    const cur=getComputedStyle(sidebar).getPropertyValue("--sidebar-w").trim();
+    const px=parseInt(cur,10); if(px) localStorage.setItem(SIDEBAR_W_KEY, px);
+  };
+  const onDown=(e)=>{
+    dragging=true; sidebar.classList.add("resizing");
+    startX=(e.touches?e.touches[0].clientX:e.clientX);
+    startW=parseInt(getComputedStyle(sidebar).getPropertyValue("--sidebar-w"),10) || sidebar.offsetWidth;
+    document.addEventListener("mousemove",onMove); document.addEventListener("mouseup",onUp);
+    document.addEventListener("touchmove",onMove,{passive:false}); document.addEventListener("touchend",onUp);
+    e.preventDefault();
+  };
+  handle.addEventListener("mousedown", onDown);
+  handle.addEventListener("touchstart", onDown, {passive:false});
+  // double-click resets to default
+  handle.addEventListener("dblclick", ()=>{ sidebar.style.removeProperty("--sidebar-w"); localStorage.removeItem(SIDEBAR_W_KEY); if(map) map.invalidateSize(); });
+}
 
 /* ============================================================================
    TABS
@@ -1075,7 +1142,7 @@ if(window.matchMedia){
 
 async function boot(){
   buildFilterChips();
-  wireFilters(); wireTabs();
+  wireFilters(); wireTabs(); wireSidebarResize();
 
   // Clean up URL hash left by Supabase auth redirect
   if(window.location.hash && window.location.hash.includes('access_token')){

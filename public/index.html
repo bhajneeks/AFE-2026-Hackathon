@@ -62,34 +62,69 @@
   </header>
 
   <main>
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
+     <div class="sidebar-inner">
       <div class="search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-        <input id="q" placeholder="Search name, school, interest…" />
+        <input id="q" placeholder="Search people…" />
       </div>
-      <h3>Quick filters</h3>
-      <div class="chips" id="quick-filters">
-        <span class="chip accent" data-f="nearby">📍 Nearby me</span>
-        <span class="chip" data-f="sameCity">🏙️ Same city</span>
-        <span class="chip" data-f="sameBuilding">🏢 Same building</span>
-        <span class="chip" data-f="sameSchool">🎓 Same school</span>
-        <span class="chip" data-f="sameTz">🕒 Same timezone</span>
-        <span class="chip" data-f="newToo">🌱 Also new to this</span>
-        <span class="chip" data-f="coffee">☕ Open to coffee</span>
+
+      <div class="filter-head">
+        <span>Filters</span>
+        <button class="filter-reset-mini" id="reset" title="Clear all filters">Clear all</button>
       </div>
-      <h3>Track</h3>
-      <div class="chips" id="track-filters">
-        <span class="chip" data-track="SDE" title="Software Development Engineer">💻 SDE</span>
-        <span class="chip" data-track="HDE" title="Hardware Development Engineer">🖥️ HDE</span>
-        <span class="chip" data-track="alumni">🌟 Alumni mentors</span>
-      </div>
-      <h3>City</h3>
-      <div class="chips" id="city-filters"></div>
-      <h3>Building</h3>
-      <div class="chips" id="building-filters"></div>
-      <h3>Shared interests</h3>
-      <div class="chips interest-cloud" id="interest-filters"></div>
-      <button class="filter-reset" id="reset">Reset all filters</button>
+
+      <details class="filter-group" id="grp-quick" open>
+        <summary>⚡ Quick filters <span class="fg-count" data-count-for="quick"></span></summary>
+        <div class="fg-body">
+          <div class="chips" id="quick-filters">
+            <span class="chip accent" data-f="nearby">📍 Nearby me</span>
+            <span class="chip" data-f="sameCity">🏙️ Same city</span>
+            <span class="chip" data-f="sameBuilding">🏢 Same building</span>
+            <span class="chip" data-f="sameSchool">🎓 Same school</span>
+            <span class="chip" data-f="sameTz">🕒 Same timezone</span>
+            <span class="chip" data-f="newToo">🌱 Also new to this</span>
+            <span class="chip" data-f="coffee">☕ Open to coffee</span>
+          </div>
+        </div>
+      </details>
+
+      <details class="filter-group" id="grp-track" open>
+        <summary>🧭 Track <span class="fg-count" data-count-for="track"></span></summary>
+        <div class="fg-body">
+          <div class="chips" id="track-filters">
+            <span class="chip" data-track="SDE" title="Software Development Engineer">💻 SDE</span>
+            <span class="chip" data-track="HDE" title="Hardware Development Engineer">🖥️ HDE</span>
+            <span class="chip" data-track="alumni">🌟 Alumni mentors</span>
+          </div>
+        </div>
+      </details>
+
+      <details class="filter-group" id="grp-city">
+        <summary>🏙️ City <span class="fg-count" data-count-for="city"></span></summary>
+        <div class="fg-body">
+          <input class="fg-search" id="city-search" placeholder="Filter cities…" autocomplete="off">
+          <div class="chips" id="city-filters"></div>
+        </div>
+      </details>
+
+      <details class="filter-group" id="grp-building">
+        <summary>🏢 Building <span class="fg-count" data-count-for="building"></span></summary>
+        <div class="fg-body">
+          <input class="fg-search" id="building-search" placeholder="Filter buildings…" autocomplete="off">
+          <div class="chips" id="building-filters"></div>
+        </div>
+      </details>
+
+      <details class="filter-group" id="grp-interest">
+        <summary>✨ Interests <span class="fg-count" data-count-for="interest"></span></summary>
+        <div class="fg-body">
+          <input class="fg-search" id="interest-search" placeholder="Filter interests…" autocomplete="off">
+          <div class="chips interest-cloud" id="interest-filters"></div>
+        </div>
+      </details>
+     </div><!-- /.sidebar-inner -->
+      <div class="sidebar-resizer" id="sidebar-resizer" title="Drag to resize" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
     </aside>
 
     <section class="content">
