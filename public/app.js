@@ -1877,7 +1877,7 @@ function enablePinDrop(){
   const canvases = map.getContainer().querySelectorAll("canvas");
   canvases.forEach(c=>c.style.pointerEvents="none");
 
-  async function onMapClick(e){
+  function onMapClick(e){
     const lat=e.latlng.lat, lng=e.latlng.lng;
     saveCachedLocation({lat, lng, accuracy:500, ts:Date.now()});
     showLocation(lat, lng, 500, {announce:true});
@@ -1886,16 +1886,7 @@ function enablePinDrop(){
     if(markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents=""; });
     canvases.forEach(c=>c.style.pointerEvents="");
     map.off("click", onMapClick);
-    // Update profile city to nearest hub
-    const hub = nearestHub(lat, lng);
-    if(hub && ME){
-      ME.city = hub;
-      await db.from('users').update({ city: hub }).eq('id', ME.id);
-      renderAll();
-      toast(`Moved to ${hub}`);
-    } else {
-      toast("Pin dropped");
-    }
+    toast("Pin saved");
   }
   map.on("click", onMapClick);
 }
