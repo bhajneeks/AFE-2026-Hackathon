@@ -206,6 +206,8 @@
   /* ---------- LinkedIn button ---------- */
   .btn.linkedin { background:#0a66c2; border-color:#0a66c2; color:#fff; }
   .btn.linkedin:hover { background:#0e75da; border-color:#0e75da; }
+  .btn.danger { background:transparent; border-color:#a33; color:#e07070; }
+  .btn.danger:hover { background:#a33; color:#fff; }
 
   /* ---------- Chat modal (DMs + group chats) ---------- */
   .modal.chat-modal { height:600px; max-height:86vh; display:flex; flex-direction:column; }
