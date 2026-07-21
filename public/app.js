@@ -347,18 +347,21 @@ function openChat(key){
     </div>
     <div class="chat-body" id="chat-body"></div>
     <div class="chat-foot">
-      <input id="chat-input" placeholder="Message ${esc(c.type==="dm"?c.title.split(" ")[0]:"the group")}…" autocomplete="off">
+      <textarea id="chat-input" rows="1" placeholder="Type a message to ${esc(c.type==="dm"?c.title.split(" ")[0]:"the group")}…"></textarea>
       <button class="btn primary" id="chat-send">Send</button>
     </div>`;
   $("#modal-back").classList.add("open");
   const input=$("#chat-input"), send=async()=>{
     const v=input.value.trim(); if(!v) return;
-    input.value=""; input.focus();
+    input.value=""; input.style.height="auto"; input.focus();
     try{ await sendMessage(key,v); }
     catch(e){ input.value=v; toast("Message failed to send — try again"); } // restore text on failure
   };
+  // Auto-expand as the user types (or when a suggestion is inserted)
+  const autosize=()=>{ input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,140)+"px"; };
+  input.addEventListener("input", autosize);
   $("#chat-send").addEventListener("click", send);
-  input.addEventListener("keydown", e=>{ if(e.key==="Enter") send(); });
+  input.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); } });
   renderChatBody(); setTimeout(()=>input.focus(),50);
 }
 function closeChat(){ OPEN_CHAT=null; $("#modal").className="modal"; closeModal(); }
@@ -786,7 +789,22 @@ window.startDM=async function(peerId){
   const convoKey = dmConvoKey(ME.id, peerId);
   c.messages = await loadMessages(convoKey);
   openChat(c.key);
-  if(!c.messages.length){ const input=$("#chat-input"); if(input){ input.value=coffeeMessage(p); input.focus(); input.select&&input.setSelectionRange(0,0); } }
+  if(!c.messages.length){
+    // Don't force words into the composer — offer the suggested intro as an opt-in chip.
+    const foot=document.querySelector(".chat-foot");
+    if(foot && !document.querySelector("#intro-suggest")){
+      const bar=document.createElement("div");
+      bar.id="intro-suggest";
+      bar.innerHTML=`<button class="suggest-chip">✨ Use suggested intro</button>`;
+      foot.parentNode.insertBefore(bar, foot);
+      bar.querySelector("button").addEventListener("click", ()=>{
+        const input=$("#chat-input");
+        if(input){ input.value=coffeeMessage(p); input.dispatchEvent(new Event("input")); input.focus(); }
+        bar.remove();
+      });
+    }
+    const input=$("#chat-input"); if(input) input.focus();
+  }
 };
 /* window.openLinkedIn — provided by linkedin.js */
 
