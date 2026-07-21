@@ -377,7 +377,7 @@ function openChat(key){
   input.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); } });
   renderChatBody(); setTimeout(()=>input.focus(),50);
 }
-function closeChat(){ OPEN_CHAT=null; $("#modal").className="modal"; closeModal(); }
+function closeChat(){ OPEN_CHAT=null; $("#modal").className="modal"; closeModal(); refreshMessagingUI(); }
 window.addMemberToGroup=function(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g) return;
   const nonMembers=PEOPLE.filter(p=>!g.members.includes(p.id));
@@ -1870,25 +1870,23 @@ function enablePinDrop(){
   if(btn){ btn.classList.add("on"); btn.textContent="Tap map..."; }
   toast("Tap anywhere on the map to drop your pin");
 
-  // Temporarily disable ALL overlays so clicks reach the map
-  if(markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents="none"; });
-  if(heatLayer && heatLayer._canvas) heatLayer._canvas.style.pointerEvents="none";
-  // Also disable any canvas in the overlay pane
-  const canvases = map.getContainer().querySelectorAll("canvas");
-  canvases.forEach(c=>c.style.pointerEvents="none");
+  // Create a transparent overlay on top of the map to guarantee we catch the click
+  const mapContainer = map.getContainer();
+  const overlay = document.createElement("div");
+  overlay.id = "pin-drop-overlay";
+  overlay.style.cssText = "position:absolute;inset:0;z-index:9999;cursor:crosshair;";
+  mapContainer.appendChild(overlay);
 
-  function onMapClick(e){
-    const lat=e.latlng.lat, lng=e.latlng.lng;
-    saveCachedLocation({lat, lng, accuracy:500, ts:Date.now()});
-    showLocation(lat, lng, 500, {announce:true});
+  overlay.addEventListener("click", function handler(e){
+    const rect = mapContainer.getBoundingClientRect();
+    const point = L.point(e.clientX - rect.left, e.clientY - rect.top);
+    const latlng = map.containerPointToLatLng(point);
+    saveCachedLocation({lat:latlng.lat, lng:latlng.lng, accuracy:500, ts:Date.now()});
+    showLocation(latlng.lat, latlng.lng, 500, {announce:true});
+    overlay.remove();
     disablePinDrop();
-    // Restore everything
-    if(markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents=""; });
-    canvases.forEach(c=>c.style.pointerEvents="");
-    map.off("click", onMapClick);
     toast("Pin saved");
-  }
-  map.on("click", onMapClick);
+  }, {once:true});
 }
 
 function disablePinDrop(){
@@ -1896,8 +1894,8 @@ function disablePinDrop(){
   document.body.classList.remove("pin-drop-mode");
   const btn = $("#btn-pin-drop");
   if(btn){ btn.classList.remove("on"); btn.textContent="Drop pin"; }
-  // Restore marker interaction in case cancelled
-  if(map && markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents=""; });
+  const overlay = document.getElementById("pin-drop-overlay");
+  if(overlay) overlay.remove();
 }
 // Show saved pin on map load
 function restoreSavedPin(){
