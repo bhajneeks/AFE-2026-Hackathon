@@ -37,13 +37,14 @@ function linkedinNote(person){
   const reasons=connectionReasons(person);
   const meName=ME?.name?.split(" ")[0] || "a fellow AFE";
   const hook=reasons.find(r=>r.key!=="alum")?.me || "we're both AFE interns";
-  let note=`Hi ${person.name.split(" ")[0]}, I'm ${meName} — ${hook}. Would love to connect here on LinkedIn and maybe grab a quick coffee chat!`;
+  let note=`Hi ${person.name.split(" ")[0]}, I'm ${meName} — ${hook}. Would love to connect here on LinkedIn and hopefully grab coffee with you sometime!`;
   return note.length>300 ? note.slice(0,297)+"…" : note;
 }
 
 // The "in Connect" modal: personalized note + open the profile in a new tab.
 window.openLinkedIn=function(peerId){
   const p=byId(peerId); if(!p||!p.linkedin) return;
+  if(p.privacy && p.privacy.linkedin===false) return;  // respect their privacy toggle even if a button slipped through
   const note=linkedinNote(p);
   showModal(`
     <div class="m-head"><div class="btn linkedin" style="pointer-events:none;font-size:16px">in</div><h2>Connect on LinkedIn</h2><button class="x" onclick="closeModal()">×</button></div>
