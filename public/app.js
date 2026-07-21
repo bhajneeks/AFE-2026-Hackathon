@@ -1000,6 +1000,11 @@ async function boot(){
   buildFilterChips();
   wireFilters(); wireTabs();
 
+  // Clean up URL hash left by Supabase auth redirect
+  if(window.location.hash && window.location.hash.includes('access_token')){
+    history.replaceState(null, '', window.location.pathname);
+  }
+
   // Check if user is already logged in (session persists)
   const { data: { session } } = await db.auth.getSession();
   if(session){
