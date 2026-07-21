@@ -478,11 +478,42 @@ function renderCards(){
   }
 }
 
-let map, markerLayer;
+let map, markerLayer, heatLayer=null;
+let heatOn = (localStorage.getItem("orbit-heat")||"on")!=="off";
+// Snapchat/Strava-style density heatmap: warm glow where AFEs cluster.
+// Each person contributes a small spray of weighted points around their jittered
+// spot so overlapping people build up intensity (a real density field).
+function renderHeat(list){
+  if(!map || typeof L.heatLayer!=="function") return;
+  if(heatLayer){ map.removeLayer(heatLayer); heatLayer=null; }
+  if(!heatOn) return;
+  const pts=[];
+  const add=(lat,lng,w)=>pts.push([lat,lng,w]);
+  const seed=s=>{ let h=0; for(const c of s) h=(h*33+c.charCodeAt(0))>>>0; return h; };
+  for(const p of list){
+    const j=jitter(p.city, p.id); if(!j) continue;
+    add(j.lat, j.lng, 1.0);
+    // Dense halo so each person already glows and clusters bloom hot (Snapchat/Strava feel).
+    const h=seed(p.id);
+    for(let k=0;k<7;k++){
+      const dx=(((h>>(k*3))%100)/100-0.5)*0.09, dy=(((h>>(k*3+1))%100)/100-0.5)*0.09;
+      add(j.lat+dy, j.lng+dx, 0.6);
+    }
+  }
+  if(ME && ME.privacy.onMap){ const jm=jitter(ME.city, ME.id+"me"); if(jm){ add(jm.lat,jm.lng,1.0); for(let k=0;k<5;k++){ add(jm.lat+(Math.sin(k)*0.03), jm.lng+(Math.cos(k)*0.03), 0.6); } } }
+  heatLayer=L.heatLayer(pts, {
+    radius:48, blur:38, minOpacity:0.45, max:3.5, maxZoom:12,
+    // Bold Strava/Snapchat warm ramp: transparent → blue → teal → gold → orange → hot red core
+    gradient:{ 0.0:"rgba(74,134,224,0)", 0.2:"#4a86e0", 0.4:"#46d6a4", 0.58:"#ffcf5c", 0.75:"#ff8a4c", 0.9:"#ff5a2e", 1.0:"#ff2d1a" }
+  }).addTo(map);
+  // The heat layer draws in Leaflet's overlayPane (below the markerPane), so
+  // pins stay clickable above the glow automatically — no manual re-stacking.
+}
 function renderMap(){
   if(!map) return;
   markerLayer.clearLayers();
   const list=visiblePeople();
+  renderHeat(list);
   $("#count-bar-map").innerHTML=`<b>${list.length}</b> ${list.length===1?"AFE":"AFEs"} on the map · pins are approximate`;
   if(ME && ME.privacy.onMap){
     const j=jitter(ME.city, ME.id+"me");
@@ -1010,8 +1041,10 @@ document.addEventListener("click", e=>{ const sw=e.target.closest("[data-priv]")
    LOGIN + BOOT
    ========================================================================== */
 let tileLayer=null;
-// CartoDB basemaps: dark_all for dark theme, light_all for light theme (no API key).
-function tileUrlFor(theme){ return `https://{s}.basemaps.cartocdn.com/${theme==="light"?"light_all":"dark_all"}/{z}/{x}/{y}{r}.png`; }
+// CartoDB basemaps (no API key). Voyager = detailed with roads/labels/terrain for
+// a livelier canvas in light mode; dark_matter (dark_all) for the dark theme so the
+// warm heatmap glow pops. Both free, {s} subdomains a-d.
+function tileUrlFor(theme){ const style = theme==="light" ? "rastertiles/voyager" : "dark_all"; return `https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`; }
 function setMapTiles(theme){
   if(!map) return;
   if(tileLayer) map.removeLayer(tileLayer);
@@ -1094,6 +1127,11 @@ function locateMe(e){
 function wireMapTools(){
   const btn=$("#btn-locate"); if(btn && !btn._wired){ btn._wired=true; btn.addEventListener("click", locateMe); }
   const rbtn=$("#btn-locate-refresh"); if(rbtn && !rbtn._wired){ rbtn._wired=true; rbtn.addEventListener("click", ()=>{ rbtn.classList.add("spin"); const clear=()=>rbtn.classList.remove("spin"); setTimeout(clear,1200); fetchAndCacheLocation(); }); }
+  const hbtn=$("#btn-heat"); if(hbtn && !hbtn._wired){ hbtn._wired=true;
+    hbtn.classList.toggle("on", heatOn); hbtn.setAttribute("aria-pressed", String(heatOn));
+    hbtn.addEventListener("click", ()=>{ heatOn=!heatOn; localStorage.setItem("orbit-heat", heatOn?"on":"off");
+      hbtn.classList.toggle("on", heatOn); hbtn.setAttribute("aria-pressed", String(heatOn)); renderMap(); });
+  }
   const inp=$("#map-city-search"), box=$("#map-suggest");
   if(!inp || inp._wired) return; inp._wired=true;
   const cities=Object.keys(CITIES);

@@ -11,13 +11,14 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 
 <!-- Fonts: Outfit (display) + Plus Jakarta Sans (body) -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
 
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=20260720b" />
 </head>
 <body>
 
@@ -140,6 +141,7 @@
             <button class="btn map-locate" id="btn-locate" title="Jump to your saved location (Shift-click to refresh it)">📍 Locate me</button>
             <button class="locate-refresh" id="btn-locate-refresh" title="Update my saved location" aria-label="Update my saved location">⟳</button>
           </div>
+          <button class="btn map-heat on" id="btn-heat" title="Toggle the AFE density heatmap" aria-pressed="true">🔥 Heatmap</button>
         </div>
         <div class="count-bar" id="count-bar-map"></div>
         <div class="map-legend">
@@ -186,7 +188,7 @@
 <div class="modal-back" id="modal-back"><div class="modal" id="modal"></div></div>
 <div class="toast-wrap" id="toasts"></div>
 
-<script src="app.js"></script>
-<script src="linkedin.js"></script>
+<script src="app.js?v=20260720b"></script>
+<script src="linkedin.js?v=20260720b"></script>
 </body>
 </html>
