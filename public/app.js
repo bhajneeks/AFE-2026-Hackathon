@@ -575,7 +575,7 @@ function facePin(p, color, me=false, alum=false){
   const pulse = isOnline ? `<div class="presence-pulse"></div>` : "";
   return L.divIcon({
     className:"", iconSize:[size,size], iconAnchor:[size/2,size/2],
-    html:`<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${isOnline&&!me?"#46d6a4":color};box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:visible;">
+    html:`<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${color};box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:visible;">
             ${pulse}
             <div style="width:100%;height:100%;border-radius:50%;overflow:hidden;${inner}">${label}</div>${badge}
           </div>`
@@ -1287,7 +1287,7 @@ function renderGlobe(){
   globeInstance.pointsData(points)
     .pointLat(d => d.lat)
     .pointLng(d => d.lng)
-    .pointColor(d => d.isMe ? "#46d6a4" : d.online ? "#46d6a4" : trackColor(d.person.track))
+    .pointColor(d => d.isMe ? "#46d6a4" : trackColor(d.person.track))
     .pointAltitude(d => d.online ? 0.015 : 0.005)
     .pointRadius(d => d.isMe ? 0.55 : 0.4)
     .onPointClick(d => {
