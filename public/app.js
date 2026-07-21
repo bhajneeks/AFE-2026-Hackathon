@@ -776,6 +776,7 @@ function updateFilterCounts(){
 
 /* ---------- Resizable sidebar (drag handle + persisted width) ---------- */
 const SIDEBAR_W_KEY="orbit-sidebar-w";
+const SIDEBAR_COLLAPSED_KEY="orbit-sidebar-collapsed";
 function wireSidebarResize(){
   const sidebar=$("#sidebar"), handle=$("#sidebar-resizer"); if(!sidebar||!handle) return;
   // restore saved width
@@ -810,6 +811,23 @@ function wireSidebarResize(){
   handle.addEventListener("touchstart", onDown, {passive:false});
   // double-click resets to default
   handle.addEventListener("dblclick", ()=>{ sidebar.style.removeProperty("--sidebar-w"); localStorage.removeItem(SIDEBAR_W_KEY); if(map) map.invalidateSize(); });
+
+  // collapse / expand
+  const toggle=$("#sidebar-toggle");
+  const applyCollapsed=(on)=>{
+    sidebar.classList.toggle("collapsed", on);
+    toggle.textContent = on ? "›" : "‹";
+    toggle.setAttribute("aria-expanded", String(!on));
+    toggle.title = on ? "Show filters" : "Collapse filters";
+    toggle.setAttribute("aria-label", toggle.title);
+    if(map) setTimeout(()=>map.invalidateSize(),60);
+  };
+  applyCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)==="1");
+  toggle.addEventListener("click", ()=>{
+    const on=!sidebar.classList.contains("collapsed");
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, on ? "1" : "0");
+    applyCollapsed(on);
+  });
 }
 
 /* ============================================================================
