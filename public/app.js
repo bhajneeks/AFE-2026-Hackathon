@@ -1376,8 +1376,9 @@ function initMap(){
   wireMapTools();
 }
 
-/* ---------- Map tools: "Locate me" + city jump search ---------- */
+/* ---------- Map tools: "Locate me" + city jump search + pin-drop ---------- */
 let locateMarker=null, locateCircle=null;
+let pinDropMode = false;
 function countInCity(city){ return PEOPLE.filter(p=>p.city===city).length; }
 
 function flyToCity(city){
@@ -1477,6 +1478,7 @@ function wireMapTools(){
       hbtn.classList.toggle("on", heatOn); hbtn.setAttribute("aria-pressed", String(heatOn)); renderMap(); });
   }
   const gbtn=$("#btn-globe"); if(gbtn && !gbtn._wired){ gbtn._wired=true; gbtn.addEventListener("click", toggleGlobe); }
+  const pdbtn=$("#btn-pin-drop"); if(pdbtn && !pdbtn._wired){ pdbtn._wired=true; pdbtn.addEventListener("click", ()=>{ if(pinDropMode) disablePinDrop(); else enablePinDrop(); }); }
   const inp=$("#map-city-search"), box=$("#map-suggest");
   if(!inp || inp._wired) return; inp._wired=true;
   const cities=Object.keys(CITIES);
@@ -1583,6 +1585,166 @@ async function loadAllConversations(){
   refreshMessagingUI();
 }
 
+/* ============================================================================
+   ONBOARDING WIZARD — multi-step full-screen flow for first-time users
+   ========================================================================== */
+let obStep = 0;
+const OB_TOTAL_STEPS = 7; // 0-6
+
+function startOnboarding(){
+  obStep = 0;
+  const el = $("#onboarding");
+  el.classList.remove("hidden");
+
+  // Build progress dots
+  const prog = $("#ob-progress");
+  prog.innerHTML = "";
+  for(let i=0; i<OB_TOTAL_STEPS; i++){
+    const dot = document.createElement("span");
+    dot.className = "ob-dot" + (i===0?" active":"");
+    prog.appendChild(dot);
+  }
+
+  // Populate city dropdown
+  const citySel = $("#ob-city");
+  citySel.innerHTML = Object.keys(CITIES).map(c=>`<option value="${esc(c)}" ${ME.city===c?"selected":""}>${c}</option>`).join("");
+
+  // Pre-fill fields from ME (from Google data)
+  const nameInp = $("#ob-name");
+  if(nameInp) nameInp.value = ME.name || "";
+  const trackSel = $("#ob-track-sel");
+  if(trackSel) trackSel.value = ME.track || "SDE";
+
+  // Build interest chips
+  const intWrap = $("#ob-interests");
+  intWrap.innerHTML = INTERESTS.map(i=>`<span class="chip" data-i="${i}">${i}</span>`).join("");
+
+  // Wire interest chip clicks
+  intWrap.addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c) c.classList.toggle("on"); });
+
+  // Wire all navigation buttons within onboarding
+  el.addEventListener("click", e=>{
+    const btn = e.target.closest("[data-dir]");
+    if(!btn) return;
+    const dir = btn.dataset.dir;
+    if(dir==="next") obNext();
+    else if(dir==="back") obBack();
+    else if(dir==="finish") obFinish();
+  });
+
+  obUpdateView();
+}
+
+function obUpdateView(){
+  // Slide track
+  const track = $("#ob-track");
+  track.style.transform = `translateX(-${obStep * 100}%)`;
+  // Update dots
+  const dots = $$("#ob-progress .ob-dot");
+  dots.forEach((d,i)=>{
+    d.classList.toggle("active", i===obStep);
+    d.classList.toggle("done", i<obStep);
+  });
+  // Update done avatar on last step
+  if(obStep === 6){
+    const av = $("#ob-done-avatar");
+    if(av) av.innerHTML = avatarHTML(ME, "av-xl");
+  }
+}
+
+function obNext(){
+  // Validate mandatory step (step 1 = name)
+  if(obStep === 1){
+    const name = $("#ob-name").value.trim();
+    if(!name){ toast("Please enter your name to continue"); $("#ob-name").focus(); return; }
+    ME.name = name;
+  }
+  // Collect data from current step
+  if(obStep === 2){
+    const track = $("#ob-track-sel").value;
+    const afeClass = $("#ob-afe-class").value;
+    if(track) ME.track = track;
+    if(afeClass) ME.afe_class = afeClass;
+  }
+  if(obStep === 3){
+    const city = $("#ob-city").value;
+    const building = $("#ob-building").value.trim();
+    if(city) ME.city = city;
+    if(building) ME.building = building;
+  }
+  if(obStep === 4){
+    const school = $("#ob-school").value.trim();
+    const org = $("#ob-org").value.trim();
+    if(school) ME.school = school;
+    if(org) ME.org = org;
+  }
+  if(obStep === 5){
+    ME.interests = $$("#ob-interests .chip.on").map(c=>c.dataset.i);
+  }
+  if(obStep < OB_TOTAL_STEPS - 1){
+    obStep++;
+    obUpdateView();
+  }
+}
+
+function obBack(){
+  if(obStep > 0){
+    obStep--;
+    obUpdateView();
+  }
+}
+
+async function obFinish(){
+  // Save profile to Supabase
+  const payload = {
+    name: ME.name, track: ME.track||"SDE", city: ME.city||"Seattle, WA",
+    school: ME.school||"", org: ME.org||"", building: ME.building||"",
+    interests: ME.interests||[], avail: ME.avail||"coffee",
+    new_too: ME.newToo!==undefined ? ME.newToo : true,
+    photo: ME.photo||null, privacy: ME.privacy||{...DEFAULT_PRIVACY}
+  };
+  if(ME.afe_class) payload.afe_class = ME.afe_class;
+  const { error } = await db.from('users').update(payload).eq('id', ME.id);
+  if(error){ console.error('Onboarding save error:', error); toast("Save failed -- try again"); return; }
+
+  // Mark as onboarded
+  localStorage.setItem("orbit-onboarded-"+ME.id, "1");
+
+  // Hide wizard, show app
+  $("#onboarding").classList.add("hidden");
+  renderAll();
+  if(map){ const c=CITIES[ME.city]; if(c) map.setView([c.lat,c.lng],6); }
+  toast(`Welcome to Orbit, ${ME.name.split(" ")[0]}!`);
+}
+
+/* ============================================================================
+   PIN-DROP — click-to-place location marker on the map
+   ========================================================================== */
+function enablePinDrop(){
+  if(!map) return;
+  pinDropMode = true;
+  document.body.classList.add("pin-drop-mode");
+  const btn = $("#btn-pin-drop");
+  if(btn) btn.classList.add("on");
+  toast("Tap the map to set your location");
+
+  // One-time click handler on the map
+  map.once("click", function(e){
+    const {lat, lng} = e.latlng;
+    saveCachedLocation({lat, lng, accuracy:500, ts:Date.now()});
+    showLocation(lat, lng, 500);
+    disablePinDrop();
+    toast("Location pinned");
+  });
+}
+
+function disablePinDrop(){
+  pinDropMode = false;
+  document.body.classList.remove("pin-drop-mode");
+  const btn = $("#btn-pin-drop");
+  if(btn) btn.classList.remove("on");
+}
+
 async function enterApp(){
   const onboarded = localStorage.getItem("orbit-onboarded-"+ME.id);
   const isFirstTime = !onboarded && !ME.school && !ME.org;
@@ -1634,8 +1796,7 @@ async function enterApp(){
     .subscribe();
 
   if(isFirstTime){
-    localStorage.setItem("orbit-onboarded-"+ME.id, "1");
-    showModal(profileFormHTML("Welcome to Orbit", ME, true));
+    startOnboarding();
   }
 }
 

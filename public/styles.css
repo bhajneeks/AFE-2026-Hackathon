@@ -558,4 +558,109 @@
     .grid { grid-template-columns:1fr; }
     .two-col { grid-template-columns:1fr; }
     .modal { width:100%; }
+    .onboarding .ob-title { font-size:26px; }
   }
+
+  /* ============================================================================
+     ONBOARDING WIZARD — full-screen multi-step flow
+     ========================================================================== */
+  .onboarding {
+    position:fixed; inset:0; z-index:1900;
+    background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .onboarding.hidden { display:none; }
+
+  /* Progress dots */
+  .ob-progress {
+    position:absolute; top:32px; left:50%; transform:translateX(-50%);
+    display:flex; gap:10px; z-index:10;
+  }
+  .ob-progress .ob-dot {
+    width:10px; height:10px; border-radius:50%;
+    background:var(--line); transition:background .3s ease, transform .3s ease;
+  }
+  .ob-progress .ob-dot.active { background:var(--accent); transform:scale(1.3); }
+  .ob-progress .ob-dot.done { background:var(--good); }
+
+  /* Track (horizontal slide container) */
+  .ob-track {
+    display:flex; width:100%; height:100%;
+    transition:transform .45s cubic-bezier(.4,0,.2,1);
+  }
+
+  /* Individual step */
+  .ob-step {
+    min-width:100%; width:100%; height:100%;
+    display:flex; align-items:center; justify-content:center;
+    padding:40px 24px;
+  }
+  .ob-center {
+    max-width:500px; width:100%; text-align:center;
+    display:flex; flex-direction:column; align-items:center; gap:16px;
+  }
+
+  /* Typography */
+  .ob-title {
+    font-family:var(--font-display); font-weight:800; font-size:34px;
+    letter-spacing:-.6px; margin:0; line-height:1.2;
+  }
+  .ob-tagline {
+    color:var(--ink-dim); font-size:16px; margin:0; max-width:360px; line-height:1.5;
+  }
+
+  /* Hero emblem (reuses orbit-ring styles from login) */
+  .ob-hero-emblem {
+    position:relative; width:120px; height:120px; margin:0 auto 12px;
+  }
+  .ob-hero-emblem .orbit-core { position:absolute; inset:calc(50% - 13px) auto auto calc(50% - 13px); width:26px; height:26px; border-radius:50%; background:radial-gradient(circle at 34% 30%, var(--accent-2), var(--accent)); box-shadow:0 0 18px rgba(255,138,76,.8); animation:corePulse 3.2s ease-in-out infinite; }
+  .ob-hero-emblem .orbit-ring { position:absolute; inset:0; border-radius:50%; border:1.5px solid var(--cool); }
+  .ob-hero-emblem .orbit-ring.r1 { inset:6px;  transform:rotateX(68deg) rotateZ(0deg);   border-color:rgba(99,164,255,.55); }
+  .ob-hero-emblem .orbit-ring.r2 { inset:22px; transform:rotateX(64deg) rotateZ(60deg);  border-color:rgba(206,169,104,.6); }
+  .ob-hero-emblem .orbit-ring.r3 { inset:38px; transform:rotateX(70deg) rotateZ(-45deg); border-color:rgba(255,138,76,.5); }
+  .ob-hero-emblem .orbit-spin { position:absolute; inset:0; border-radius:50%; }
+  .ob-hero-emblem .orbit-ring.r1 .orbit-spin { animation:spin 4.5s linear infinite; }
+  .ob-hero-emblem .orbit-ring.r2 .orbit-spin { animation:spin 7s linear infinite reverse; }
+  .ob-hero-emblem .orbit-ring.r3 .orbit-spin { animation:spin 9.5s linear infinite; }
+  .ob-hero-emblem .orbiter { position:absolute; top:-4px; left:calc(50% - 4px); width:8px; height:8px; border-radius:50%; }
+
+  /* Form fields inside wizard */
+  .ob-field { width:100%; max-width:360px; text-align:left; }
+  .ob-field input, .ob-field select {
+    width:100%; padding:14px 16px; border-radius:var(--radius-sm);
+    border:1px solid var(--line); background:var(--panel); color:var(--ink);
+    font-size:16px; font-family:var(--font);
+  }
+  .ob-field input:focus, .ob-field select:focus { border-color:var(--accent); outline:none; box-shadow:var(--ring); }
+
+  /* Interest chips in wizard */
+  .ob-chips { max-width:460px; justify-content:center; margin:8px 0; }
+
+  /* Actions row */
+  .ob-actions {
+    display:flex; align-items:center; gap:12px; margin-top:8px;
+    flex-wrap:wrap; justify-content:center;
+  }
+  .ob-skip {
+    background:none; border:none; color:var(--ink-faint); font-size:14px;
+    font-weight:600; cursor:pointer; padding:8px 12px; font-family:var(--font);
+  }
+  .ob-skip:hover { color:var(--ink-dim); text-decoration:underline; }
+
+  /* Done step avatar */
+  .ob-done-avatar { margin-bottom:8px; }
+  .ob-done-avatar .av-xl { margin:0 auto; }
+
+  /* ---------- Pin-drop button styling ---------- */
+  .btn.map-pin-drop {
+    background:var(--overlay); backdrop-filter:blur(6px);
+    box-shadow:var(--shadow-sm); white-space:nowrap;
+  }
+  .btn.map-pin-drop.on {
+    background:linear-gradient(180deg,var(--good),#0fa877);
+    color:#fff; border-color:transparent;
+  }
+  /* Pin-drop cursor mode */
+  .pin-drop-mode #map { cursor:crosshair !important; }
+  .pin-drop-mode .leaflet-container { cursor:crosshair !important; }
