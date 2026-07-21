@@ -1036,43 +1036,64 @@ function flyToCity(city){
   toast(`${city} · ${countInCity(city)} ${countInCity(city)===1?"AFE":"AFEs"} here`);
 }
 
-// Browser geolocation → drop a transient "you are here" marker and fly to it.
-// This is NOT saved to the profile (Orbit never stores exact location).
-function locateMe(){
+/* Your location is cached in the browser (localStorage) so "Locate me" jumps
+   INSTANTLY — no geolocation prompt after the first time. It's stored only on
+   this device and never written to your Orbit profile (exact location is
+   never shared with others). Shift/Alt-click, or the tiny ⟳ affordance, forces
+   a fresh GPS read to update the cached spot. */
+const MYLOC_KEY="orbit-my-location";
+function getCachedLocation(){ try{ const v=JSON.parse(localStorage.getItem(MYLOC_KEY)||"null"); return (v&&typeof v.lat==="number"&&typeof v.lng==="number")?v:null; }catch(e){ return null; } }
+function saveCachedLocation(loc){ try{ localStorage.setItem(MYLOC_KEY, JSON.stringify(loc)); }catch(e){} }
+
+function nearestHub(lat,lng){
+  let best=null, bestD=Infinity;
+  for(const [name,c] of Object.entries(CITIES)){ if(name==="Remote / Virtual") continue;
+    const d=(c.lat-lat)**2+(c.lng-lng)**2; if(d<bestD){ bestD=d; best=name; } }
+  return best;
+}
+// Drop the "you are here" marker + fly there (used by both cached and fresh paths).
+function showLocation(lat,lng,accuracy,{announce=true}={}){
+  if(!map) return;
+  if(locateMarker) markerLayer.removeLayer(locateMarker);
+  if(locateCircle) markerLayer.removeLayer(locateCircle);
+  locateCircle=L.circle([lat,lng], { radius:Math.max(accuracy||500,300), color:"#46d6a4", weight:1, fillColor:"#46d6a4", fillOpacity:.12 }).addTo(markerLayer);
+  locateMarker=L.marker([lat,lng], { icon:L.divIcon({ className:"", iconSize:[22,22], iconAnchor:[11,11],
+    html:`<div style="width:16px;height:16px;border-radius:50%;background:#46d6a4;border:3px solid #fff;box-shadow:0 0 0 3px rgba(70,214,164,.4),0 2px 6px rgba(0,0,0,.4)"></div>` }) })
+    .addTo(markerLayer).bindPopup("<b>You are here</b><br><span style='color:#777;font-size:12px'>Saved on this device only.</span>");
+  map.flyTo([lat,lng], 11, { duration:.9 });
+  locateMarker.openPopup();
+  if(announce){ const hub=nearestHub(lat,lng); if(hub) toast(`Your location · nearest hub: ${hub} (${countInCity(hub)} AFEs)`); }
+}
+
+// Ask the browser for a fresh fix, cache it, then show. Only used first time or on refresh.
+function fetchAndCacheLocation(){
   const btn=$("#btn-locate");
   if(!navigator.geolocation){ toast("Geolocation isn't supported in this browser"); return; }
   if(btn){ btn.classList.add("locating"); btn.textContent="📍 Locating…"; }
   const done=()=>{ if(btn){ btn.classList.remove("locating"); btn.textContent="📍 Locate me"; } };
   navigator.geolocation.getCurrentPosition(
-    pos=>{
-      const { latitude:lat, longitude:lng, accuracy }=pos.coords;
-      if(map){
-        if(locateMarker) markerLayer.removeLayer(locateMarker);
-        if(locateCircle) markerLayer.removeLayer(locateCircle);
-        locateCircle=L.circle([lat,lng], { radius:Math.max(accuracy||500,300), color:"#46d6a4", weight:1, fillColor:"#46d6a4", fillOpacity:.12 }).addTo(markerLayer);
-        locateMarker=L.marker([lat,lng], { icon:L.divIcon({ className:"", iconSize:[22,22], iconAnchor:[11,11],
-          html:`<div style="width:16px;height:16px;border-radius:50%;background:#46d6a4;border:3px solid #fff;box-shadow:0 0 0 3px rgba(70,214,164,.4),0 2px 6px rgba(0,0,0,.4)"></div>` }) })
-          .addTo(markerLayer).bindPopup("<b>You are here</b><br><span style='color:#777;font-size:12px'>Not saved — shown only to you.</span>");
-        map.flyTo([lat,lng], 11, { duration:1 });
-        locateMarker.openPopup();
-      }
-      // Nearest known hub, for a helpful nudge.
-      let best=null, bestD=Infinity;
-      for(const [name,c] of Object.entries(CITIES)){ if(name==="Remote / Virtual") continue;
-        const d=(c.lat-lat)**2+(c.lng-lng)**2; if(d<bestD){ bestD=d; best=name; } }
-      if(best) toast(`Found you · nearest hub: ${best} (${countInCity(best)} AFEs)`);
+    pos=>{ const { latitude:lat, longitude:lng, accuracy }=pos.coords;
+      saveCachedLocation({ lat, lng, accuracy, ts:Date.now() });
+      showLocation(lat,lng,accuracy);
       done();
     },
-    err=>{
-      done();
-      toast(err.code===1 ? "Location permission denied" : "Couldn't get your location");
-    },
+    err=>{ done(); toast(err.code===1 ? "Location permission denied" : "Couldn't get your location"); },
     { enableHighAccuracy:true, timeout:10000, maximumAge:60000 }
   );
 }
 
+// Primary click: if we have a cached position, jump instantly (like the city
+// search). Force a fresh read with Shift/Alt-click, or when nothing is cached.
+function locateMe(e){
+  const forceFresh = e && (e.shiftKey || e.altKey);
+  const cached = getCachedLocation();
+  if(cached && !forceFresh){ showLocation(cached.lat, cached.lng, cached.accuracy); return; }
+  fetchAndCacheLocation();
+}
+
 function wireMapTools(){
   const btn=$("#btn-locate"); if(btn && !btn._wired){ btn._wired=true; btn.addEventListener("click", locateMe); }
+  const rbtn=$("#btn-locate-refresh"); if(rbtn && !rbtn._wired){ rbtn._wired=true; rbtn.addEventListener("click", ()=>{ rbtn.classList.add("spin"); const clear=()=>rbtn.classList.remove("spin"); setTimeout(clear,1200); fetchAndCacheLocation(); }); }
   const inp=$("#map-city-search"), box=$("#map-suggest");
   if(!inp || inp._wired) return; inp._wired=true;
   const cities=Object.keys(CITIES);

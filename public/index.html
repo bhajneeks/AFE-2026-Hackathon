@@ -136,7 +136,10 @@
             <input id="map-city-search" placeholder="Jump to a city…" autocomplete="off" aria-label="Search for a city on the map">
             <div class="map-suggest" id="map-suggest"></div>
           </div>
-          <button class="btn map-locate" id="btn-locate" title="Find my location">📍 Locate me</button>
+          <div class="locate-wrap">
+            <button class="btn map-locate" id="btn-locate" title="Jump to your saved location (Shift-click to refresh it)">📍 Locate me</button>
+            <button class="locate-refresh" id="btn-locate-refresh" title="Update my saved location" aria-label="Update my saved location">⟳</button>
+          </div>
         </div>
         <div class="count-bar" id="count-bar-map"></div>
         <div class="map-legend">
