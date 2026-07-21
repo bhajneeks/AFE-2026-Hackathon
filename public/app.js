@@ -136,8 +136,7 @@ const DEFAULT_PRIVACY = { onMap:true, city:true, office:true, school:true, inter
 /* ---------- State --------------------------------------------------------- */
 const state = {
   view:"map", q:"",
-  quick:new Set(), tracks:new Set(), cities:new Set(), buildings:new Set(), interests:new Set(),
-  cadence:"week" // Pair Up cadence: week | biweek
+  quick:new Set(), tracks:new Set(), cities:new Set(), buildings:new Set(), interests:new Set()
 };
 
 let GROUPS = []; // loaded from the `groups` table in doLogin
@@ -583,10 +582,7 @@ function facePin(p, color, me=false, alum=false){
   });
 }
 
-/* ---------- Speed dating (1:1, weekly / biweekly) ---------- */
-function daysSinceEpoch(){ return Math.floor(Date.now()/86400000); }
-function currentRound(){ const period=state.cadence==="week"?7:14; return Math.floor(daysSinceEpoch()/period); }
-function daysUntilNextRound(){ const period=state.cadence==="week"?7:14; return period - (daysSinceEpoch()%period); }
+/* ---------- Pair Up (swipe deck) ---------- */
 function pairScore(p){
   if(!ME) return 0; let s=0;
   const sharedInterests = (p.interests||[]).filter(i=>(ME.interests||[]).includes(i));
@@ -604,80 +600,125 @@ function pairScore(p){
   return Math.max(0, s);
 }
 function getSkippedIds(){ try{ return JSON.parse(localStorage.getItem("orbit-skipped")||"[]"); }catch(e){ return []; } }
-function addSkippedId(id){ const s=getSkippedIds(); if(!s.includes(id)){ s.push(id); localStorage.setItem("orbit-skipped",JSON.stringify(s.slice(-20))); } }
-function pairForRound(round){
-  const skipped = getSkippedIds();
-  const pool=PEOPLE.filter(p=>p.avail!=="busy" && !(ME&&p.id===ME.id) && !skipped.includes(p.id));
-  if(!pool.length) return null;
-  const ranked=pool.map(p=>({p,s:pairScore(p)})).sort((a,b)=>b.s-a.s);
-  // Pick from top candidates with some deterministic variety per round
-  const topN=Math.min(5, ranked.length);
-  const seed=hashHue(ME?.id||"me");
-  const idx=(round+seed)%topN;
-  return ranked[idx];
-}
+function addSkippedId(id){ const s=getSkippedIds(); if(!s.includes(id)){ s.push(id); localStorage.setItem("orbit-skipped",JSON.stringify(s.slice(-40))); } }
+function getLikedIds(){ try{ return JSON.parse(localStorage.getItem("orbit-liked")||"[]"); }catch(e){ return []; } }
+function addLikedId(id){ const s=getLikedIds(); if(!s.includes(id)){ s.push(id); localStorage.setItem("orbit-liked",JSON.stringify(s.slice(-40))); } }
 function compatPercent(score){ return Math.min(99, Math.max(40, Math.round(50 + score * 4))); }
+// Ranked deck of candidates to swipe through (best matches first).
+function deckCandidates(){
+  const skipped=getSkippedIds(), liked=getLikedIds();
+  const pool=PEOPLE.filter(p=>p.avail!=="busy" && !(ME&&p.id===ME.id) && !skipped.includes(p.id) && !liked.includes(p.id));
+  return pool.map(p=>({p,s:pairScore(p)})).sort((a,b)=>b.s-a.s);
+}
 function renderSpeed(){
   const wrap=$("#sd-wrap");
-  const round=currentRound();
-  const result=pairForRound(round);
-  const partner=result?.p||null;
-  const score=result?.s||0;
-  const past=[pairForRound(round-1), pairForRound(round-2)].filter(Boolean);
+  const deck=deckCandidates();
   wrap.innerHTML=`
     <div class="sd-hero">
       <h2>Pair Up</h2>
-      <p>Matched on shared interests, location, track, and school. One intro per round — skip if it's not the right fit.</p>
+      <p>Swipe right to connect, left to pass — or use the buttons. Matched on shared interests, location, track, and school.</p>
     </div>
-    <div class="sd-controls">
-      <div class="seg" id="cadence-seg">
-        <button data-cad="week" class="${state.cadence==='week'?'on':''}">Weekly</button>
-        <button data-cad="biweek" class="${state.cadence==='biweek'?'on':''}">Biweekly</button>
+    ${deck.length?`
+      <div class="swipe-deck" id="swipe-deck">
+        ${deck.slice(0,3).map((r,i)=>swipeCardHTML(r.p,r.s,i)).join("")}
       </div>
-      <div class="sd-round">Round <b>#${round}</b> — next in <b>${daysUntilNextRound()}d</b></div>
-    </div>
-    ${partner?matchCardHTML(partner,score):`<div class="empty"><div class="big" style="font-size:32px">No matches</div><p class="muted">Everyone's paired or skipped. Check back next round.</p></div>`}
-    ${past.length?`
-      <div class="sd-history">
-        <h3>Previous</h3>
-        ${past.map((r,i)=>r?.p?`
-          <div class="row">
-            ${avatarHTML(r.p,"av")}
-            <div><div class="nm">${esc(r.p.name)}</div><div class="muted" style="font-size:12px">${esc(r.p.org)} · ${r.p.city==="Remote / Virtual"?"Virtual":esc(r.p.city)}</div></div>
-            <button class="btn sm" onclick="startDM('${r.p.id}')">Message</button>
-            <span class="rn">#${round-1-i}</span>
-          </div>`:"").join("")}
-      </div>`:""}`;
+      <div class="swipe-actions">
+        <button class="swipe-btn no"  id="swipe-no"  aria-label="Pass" title="Pass (←)">✕</button>
+        <button class="swipe-btn info" id="swipe-msg" aria-label="Message" title="Message">✉</button>
+        <button class="swipe-btn yes" id="swipe-yes" aria-label="Connect" title="Connect (→)">♥</button>
+      </div>
+      <div class="swipe-hint muted">${deck.length} ${deck.length===1?"person":"people"} to meet</div>
+    `:`<div class="empty" style="text-align:center;padding:40px 0">
+        <div class="big" style="font-size:32px">You're all caught up ✨</div>
+        <p class="muted">You've seen everyone for now. Check back as more AFEs join.</p>
+        <button class="btn sm" style="margin-top:14px" onclick="resetDeck()">Start over</button>
+      </div>`}`;
+  if(deck.length) wireSwipe();
 }
-function matchCardHTML(p, score){
+function swipeCardHTML(p, score, i){
   const reasons=connectionReasons(p);
   const why=reasons.length?reasons.slice(0,3):[{t:"A fresh connection this week"}];
   const pct=compatPercent(score);
   return `
-    <div class="match-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div class="wholine">YOUR MATCH</div>
-        <div style="background:var(--accent);color:#000;padding:4px 10px;border-radius:var(--radius-pill);font-size:12px;font-weight:800">${pct}% match</div>
-      </div>
-      <div style="display:flex;gap:16px;align-items:center">
-        ${avatarHTML(p,"av-xl")}
-        <div>
-          <div class="nm">${esc(p.name)} <span class="track-badge ${p.track}" style="vertical-align:middle">${trackLabel(p.track)}</span>${p.afe_class?` <span class="track-badge" style="background:var(--accent-tint);color:var(--accent)">AFE '${p.afe_class.slice(-2)}</span>`:""}</div>
-          <div class="role">${esc(p.org)}${p.org?" · ":""}${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}${p.building?` · ${esc(p.building)}`:""}</div>
-          <div class="role" style="margin-top:4px">${esc(p.school)} · ${tzOf(p.city)}</div>
+    <div class="swipe-card" data-id="${p.id}" data-i="${i}" style="--i:${i}">
+      <div class="swipe-stamp like">CONNECT</div>
+      <div class="swipe-stamp nope">PASS</div>
+      <div class="swipe-top">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div class="wholine">MEET</div>
+          <div class="match-pct">${pct}% match</div>
         </div>
+        ${avatarHTML(p,"av-xl")}
+        <div class="nm" style="margin-top:12px">${esc(p.name)} <span class="track-badge ${p.track}" style="vertical-align:middle">${trackLabel(p.track)}</span>${p.afe_class?` <span class="track-badge" style="background:var(--accent-tint);color:var(--accent)">AFE '${p.afe_class.slice(-2)}</span>`:""}</div>
+        <div class="role">${esc(p.org)}${p.org?" · ":""}${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}${p.building?` · ${esc(p.building)}`:""}</div>
+        <div class="role" style="margin-top:3px">${esc(p.school)} · ${tzOf(p.city)}</div>
       </div>
-      <div class="why" style="margin-top:14px">${why.map(r=>`<span class="r">${r.t}</span>`).join("")}</div>
-      <div class="cta">
-        <button class="btn primary" onclick="startDM('${p.id}')">Message ${esc(p.name.split(" ")[0])}</button>
-        ${p.linkedin?`<button class="btn linkedin" onclick="openLinkedIn('${p.id}')"><span class="li-ic">in</span>Connect</button>`:""}
-        <button class="btn ghost" onclick="skipMatch('${p.id}')" style="margin-left:auto">Skip</button>
-      </div>
+      <div class="why">${why.map(r=>`<span class="r">${r.t}</span>`).join("")}</div>
     </div>`;
 }
-window.skipMatch=function(id){
-  addSkippedId(id);
-  toast("Skipped — you won't see them again");
+// Drag + button interactions for the top card of the deck.
+function wireSwipe(){
+  const deck=$("#swipe-deck"); if(!deck) return;
+  const topCard=()=>deck.querySelector(".swipe-card[data-i='0']");
+  let card=topCard(), startX=0, startY=0, dx=0, dy=0, dragging=false;
+  const THRESHOLD=110;
+
+  const flingOff=(dir)=>{ // dir: 1 = right/connect, -1 = left/pass
+    const c=topCard(); if(!c) return;
+    const id=c.dataset.id;
+    c.classList.add("flung");
+    c.style.transition="transform .45s cubic-bezier(.4,0,.2,1), opacity .45s ease";
+    c.style.transform=`translate(${dir*700}px, 40px) rotate(${dir*22}deg)`;
+    c.style.opacity="0";
+    if(dir>0){ addLikedId(id); toast("Connected — say hi 👋"); }
+    else { addSkippedId(id); }
+    setTimeout(()=>{ if(dir>0){ startDM(id); } renderSpeed(); }, dir>0?260:300);
+  };
+
+  const onMove=(e)=>{
+    if(!dragging||!card) return;
+    const pt=e.touches?e.touches[0]:e;
+    dx=pt.clientX-startX; dy=pt.clientY-startY;
+    card.style.transform=`translate(${dx}px, ${dy}px) rotate(${dx*0.05}deg)`;
+    const lean=Math.max(-1,Math.min(1,dx/THRESHOLD));
+    card.querySelector(".swipe-stamp.like").style.opacity=lean>0?lean:0;
+    card.querySelector(".swipe-stamp.nope").style.opacity=lean<0?-lean:0;
+    if(e.cancelable) e.preventDefault();
+  };
+  const onUp=()=>{
+    if(!dragging||!card) return;
+    dragging=false;
+    document.removeEventListener("mousemove",onMove); document.removeEventListener("mouseup",onUp);
+    document.removeEventListener("touchmove",onMove); document.removeEventListener("touchend",onUp);
+    if(Math.abs(dx)>THRESHOLD){ flingOff(dx>0?1:-1); }
+    else { // snap back
+      card.style.transition="transform .3s cubic-bezier(.34,1.56,.64,1)";
+      card.style.transform="";
+      card.querySelectorAll(".swipe-stamp").forEach(s=>s.style.opacity=0);
+      setTimeout(()=>{ if(card) card.style.transition=""; },300);
+    }
+    dx=dy=0;
+  };
+  const onDown=(e)=>{
+    card=topCard(); if(!card) return;
+    if(e.target.closest("button")) return;
+    dragging=true;
+    const pt=e.touches?e.touches[0]:e;
+    startX=pt.clientX; startY=pt.clientY; dx=dy=0;
+    card.style.transition="none";
+    document.addEventListener("mousemove",onMove); document.addEventListener("mouseup",onUp);
+    document.addEventListener("touchmove",onMove,{passive:false}); document.addEventListener("touchend",onUp);
+  };
+  if(card){ card.addEventListener("mousedown",onDown); card.addEventListener("touchstart",onDown,{passive:true}); }
+
+  $("#swipe-yes").onclick=()=>{ dx=THRESHOLD+1; flingOff(1); };
+  $("#swipe-no").onclick =()=>{ dx=-(THRESHOLD+1); flingOff(-1); };
+  $("#swipe-msg").onclick=()=>{ const c=topCard(); if(c) startDM(c.dataset.id); };
+}
+window.resetDeck=function(){
+  localStorage.removeItem("orbit-skipped");
+  localStorage.removeItem("orbit-liked");
+  toast("Deck reset");
   renderSpeed();
 };
 
@@ -860,8 +901,6 @@ document.addEventListener("click", e=>{
   if(g) joinGroup(g.dataset.group);
   const oc=e.target.closest("[data-openchat]");
   if(oc) openGroupChat(oc.dataset.openchat);
-  const cad=e.target.closest("[data-cad]");
-  if(cad){ state.cadence=cad.dataset.cad; renderSpeed(); }
 });
 async function joinGroup(gid){
   const g=GROUPS.find(x=>x.id===gid); if(!g||!ME) return;
