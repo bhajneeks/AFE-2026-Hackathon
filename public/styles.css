@@ -240,7 +240,7 @@
   /* Map toolbar: city search + locate-me */
   .map-toolbar { position:absolute; top:14px; left:14px; z-index:460; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
   .map-btns { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .map-search { position:relative; width:250px; }
+  .map-search { position:relative; width:250px; z-index:10; }
   .map-search > svg { position:absolute; left:11px; top:11px; opacity:.55; pointer-events:none; }
   .map-search input { width:100%; padding:10px 12px 10px 34px; border-radius:var(--radius-sm); border:1px solid var(--line);
     background:var(--overlay); color:var(--ink); font-size:13.5px; backdrop-filter:blur(6px); box-shadow:var(--shadow-sm); }

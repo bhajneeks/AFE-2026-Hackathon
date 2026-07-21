@@ -1173,6 +1173,10 @@ function initGlobe(){
     .atmosphereColor(isDark ? "#1e3a8a" : "#4fa3e0")
     .atmosphereAltitude(0.18);
 
+  // Disable zoom on globe — only allow rotation
+  const controls = globeInstance.controls();
+  if(controls){ controls.enableZoom = false; controls.minDistance = 280; controls.maxDistance = 280; }
+
   // Resize with container
   const ro = new ResizeObserver(()=>{
     if(globeInstance){
@@ -1382,13 +1386,40 @@ function fetchAndCacheLocation(){
   );
 }
 
-// Primary click: if we have a cached position, jump instantly (like the city
-// search). Force a fresh read with Shift/Alt-click, or when nothing is cached.
+// Primary click: cached GPS > try geolocation > fall back to profile city
 function locateMe(e){
   const forceFresh = e && (e.shiftKey || e.altKey);
   const cached = getCachedLocation();
   if(cached && !forceFresh){ showLocation(cached.lat, cached.lng, cached.accuracy); return; }
-  fetchAndCacheLocation();
+  // Try real geolocation; if unavailable or denied, fall back to profile city
+  if(!navigator.geolocation){
+    locateFallbackToCity();
+    return;
+  }
+  const btn=$("#btn-locate");
+  if(btn){ btn.classList.add("locating"); btn.textContent="Locating..."; }
+  const done=()=>{ if(btn){ btn.classList.remove("locating"); btn.textContent="Locate me"; } };
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ const {latitude:lat,longitude:lng,accuracy}=pos.coords;
+      saveCachedLocation({lat,lng,accuracy,ts:Date.now()});
+      showLocation(lat,lng,accuracy);
+      done();
+    },
+    err=>{
+      done();
+      locateFallbackToCity();
+    },
+    { enableHighAccuracy:true, timeout:8000, maximumAge:60000 }
+  );
+}
+function locateFallbackToCity(){
+  if(ME && ME.city && CITIES[ME.city] && ME.city!=="Remote / Virtual"){
+    const c=CITIES[ME.city];
+    showLocation(c.lat, c.lng, 2000, {announce:true});
+    saveCachedLocation({lat:c.lat, lng:c.lng, accuracy:2000, ts:Date.now()});
+  } else {
+    toast("Set your city in your profile to use Locate me");
+  }
 }
 
 function wireMapTools(){
