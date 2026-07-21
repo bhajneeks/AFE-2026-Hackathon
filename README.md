@@ -107,9 +107,4 @@ Nashville, Detroit, Pittsburgh, Atlanta, Toronto, Herndon, New York, Boston),
 plus a Remote / Virtual option.
 
 ## Notes
-
-- The 40 seed profiles are **fake** — sample LinkedIn handles and `@example.com`
-  addresses. No real people, no Amazon-internal data (hub locations are public).
-- RLS is intentionally permissive for the hackathon (anon key). Tighten before
-  any real-world use.
 - Peccy cursor image is the Amazon mascot used for the hackathon demo only.
