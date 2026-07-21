@@ -1849,18 +1849,19 @@ function enablePinDrop(){
   if(btn){ btn.classList.add("on"); btn.textContent="Tap map..."; }
   toast("Tap anywhere on the map to drop your pin");
 
-  // Use a direct DOM listener on the map container to catch all clicks
-  const mapEl = map.getContainer();
+  // Temporarily hide markers so they don't eat the click
+  if(markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents="none"; });
+
   function onMapClick(e){
-    const latlng = map.mouseEventToLatLng(e);
-    saveCachedLocation({lat:latlng.lat, lng:latlng.lng, accuracy:500, ts:Date.now()});
-    showLocation(latlng.lat, latlng.lng, 500, {announce:true});
+    saveCachedLocation({lat:e.latlng.lat, lng:e.latlng.lng, accuracy:500, ts:Date.now()});
+    showLocation(e.latlng.lat, e.latlng.lng, 500, {announce:true});
     disablePinDrop();
-    toast("Pin dropped — this is your location now");
-    mapEl.removeEventListener("click", onMapClick);
+    // Restore marker interaction
+    if(markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents=""; });
+    map.off("click", onMapClick);
+    toast("Pin dropped");
   }
-  // Small delay so the button click itself doesn't immediately fire
-  setTimeout(()=> mapEl.addEventListener("click", onMapClick, {once:true}), 100);
+  map.on("click", onMapClick);
 }
 
 function disablePinDrop(){
@@ -1868,6 +1869,8 @@ function disablePinDrop(){
   document.body.classList.remove("pin-drop-mode");
   const btn = $("#btn-pin-drop");
   if(btn){ btn.classList.remove("on"); btn.textContent="Drop pin"; }
+  // Restore marker interaction in case cancelled
+  if(map && markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents=""; });
 }
 // Show saved pin on map load
 function restoreSavedPin(){
