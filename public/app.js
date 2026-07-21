@@ -242,6 +242,7 @@ function mapGroupRow(g){
   const rows=g.group_members||[];
   return {
     id: g.id, emoji: g.emoji, title: g.title, desc: g.description, city: g.city, private: g.private||false,
+    createdBy: g.created_by||null,
     members: rows.filter(m=>(m.status||'member')!=='pending').map(m=>m.user_id),
     pending: rows.filter(m=>m.status==='pending').map(m=>m.user_id)
   };
@@ -861,6 +862,7 @@ function renderGroups(){
           <button class="btn ${joined?'':'primary'}" style="flex:1;min-width:110px" data-group="${g.id}">${joined?'✓ Joined':(g.private?'Private group':'Join brown bag')}</button>
           ${joined?`<button class="btn" data-invite="${g.id}" title="Invite people to this group"><span class="li-ic" style="background:none;color:inherit">＋</span>Invite</button>`:""}
           ${joined?`<button class="btn primary" data-openchat="${g.id}">Open chat</button>`:""}
+          ${ME&&g.createdBy===ME.id?`<button class="btn danger" data-delgroup="${g.id}" title="Delete this group">Delete</button>`:""}
         `}
       </div>`;
     wrap.appendChild(card);
@@ -884,6 +886,27 @@ window.declineInvite=async function(gid){
   g.pending=(g.pending||[]).filter(id=>id!==ME.id);
   renderGroups(); updateGroupsBadge(); toast("Invite declined");
 };
+window.deleteGroup=async function(gid){
+  if(!ME) return;
+  const g=GROUPS.find(x=>x.id===gid); if(!g) return;
+  if(g.createdBy!==ME.id){ toast("Only the group's creator can delete it"); return; }
+  if(!confirm(`Delete "${g.title}"? This removes it for everyone and can't be undone.`)) return;
+  // group_members rows cascade on group delete (FK ON DELETE CASCADE).
+  const { error }=await db.from('groups').delete().eq('id',gid);
+  if(error){ console.error('deleteGroup failed:', error); toast("Couldn't delete — try again"); return; }
+  // Messages are keyed by convo_key string (no FK), so clean them up too.
+  db.from('messages').delete().eq('convo_key', 'grp:'+gid).then(()=>{}, ()=>{});
+  removeGroupLocal(gid);
+  toast(`Deleted "${g.title}"`);
+};
+// Remove a group from local state + its chat, closing it if open.
+function removeGroupLocal(gid){
+  const i=GROUPS.findIndex(x=>x.id===gid); if(i>=0) GROUPS.splice(i,1);
+  const key=grpKey(gid);
+  if(OPEN_CHAT===key) closeChat();
+  delete CONVOS[key];
+  renderGroups(); updateGroupsBadge(); updateMsgBadge();
+}
 
 function renderAll(){ renderCards(); renderMap(); renderSpeed(); renderGroups(); updateMeChip(); updateMsgBadge(); updateGroupsBadge(); }
 
@@ -1035,6 +1058,8 @@ document.addEventListener("click", e=>{
   if(acc){ acceptInvite(acc.dataset.accept); return; }
   const dec=e.target.closest("[data-decline]");
   if(dec){ declineInvite(dec.dataset.decline); return; }
+  const del=e.target.closest("[data-delgroup]");
+  if(del){ deleteGroup(del.dataset.delgroup); return; }
   const inv=e.target.closest("[data-invite]");
   if(inv){ addMemberToGroup(inv.dataset.invite); return; }
   const g=e.target.closest("[data-group]");
@@ -1124,7 +1149,7 @@ window.createGroup=async function(){
   }).select().single();
   if(data){
     await db.from('group_members').insert({ group_id: data.id, user_id: ME.id, status:'member' });
-    const group = { id: data.id, emoji: data.emoji, title: data.title, desc: data.description, city: data.city, members: [ME.id], pending: [], private: data.private };
+    const group = { id: data.id, emoji: data.emoji, title: data.title, desc: data.description, city: data.city, createdBy: ME.id, members: [ME.id], pending: [], private: data.private };
     GROUPS.unshift(group); ensureGroup(group.id);
     closeModal(); renderGroups(); toast(`Created "${title}" ✓`);
     openGroupChat(group.id);
@@ -2071,6 +2096,14 @@ async function enterApp(){
       g.members = g.members.filter(id=>id!==ME.id);
       g.pending = (g.pending||[]).filter(id=>id!==ME.id);
       renderGroups();
+    })
+    .subscribe();
+
+  // Subscribe to group deletions — so a deleted group disappears live for everyone.
+  db.channel('groups-realtime')
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'groups' }, (payload) => {
+      const gid = payload.old?.id; if(!gid) return;
+      if(GROUPS.some(x=>x.id===gid)) removeGroupLocal(gid);
     })
     .subscribe();
 
