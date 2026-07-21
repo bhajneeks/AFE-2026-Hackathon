@@ -185,6 +185,10 @@
   /* ---------- Sidebar (resizable + collapsible groups) ---------- */
   .sidebar { position:relative; width:var(--sidebar-w,310px); flex:0 0 var(--sidebar-w,310px);
     border-right:1px solid var(--line); background:var(--bg-soft); overflow:hidden; }
+  /* Filters only apply to the Map and People views — hide the sidebar elsewhere. */
+  .sidebar { display:none; }
+  main:has(#view-map.active) .sidebar,
+  main:has(#view-list.active) .sidebar { display:block; }
   .sidebar-inner { height:100%; overflow-y:auto; overflow-x:hidden; padding:16px 16px 40px; }
   .sidebar.resizing { user-select:none; }
   .search { position:relative; }
