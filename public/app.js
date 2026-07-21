@@ -1858,15 +1858,20 @@ function enablePinDrop(){
   if(btn){ btn.classList.add("on"); btn.textContent="Tap map..."; }
   toast("Tap anywhere on the map to drop your pin");
 
-  // Temporarily hide markers so they don't eat the click
+  // Temporarily disable ALL overlays so clicks reach the map
   if(markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents="none"; });
+  if(heatLayer && heatLayer._canvas) heatLayer._canvas.style.pointerEvents="none";
+  // Also disable any canvas in the overlay pane
+  const canvases = map.getContainer().querySelectorAll("canvas");
+  canvases.forEach(c=>c.style.pointerEvents="none");
 
   function onMapClick(e){
     saveCachedLocation({lat:e.latlng.lat, lng:e.latlng.lng, accuracy:500, ts:Date.now()});
     showLocation(e.latlng.lat, e.latlng.lng, 500, {announce:true});
     disablePinDrop();
-    // Restore marker interaction
+    // Restore everything
     if(markerLayer) markerLayer.eachLayer(l=>{ if(l._icon) l._icon.style.pointerEvents=""; });
+    canvases.forEach(c=>c.style.pointerEvents="");
     map.off("click", onMapClick);
     toast("Pin dropped");
   }
