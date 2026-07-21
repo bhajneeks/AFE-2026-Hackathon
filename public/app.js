@@ -629,7 +629,6 @@ function getSkippedIds(){ try{ return JSON.parse(localStorage.getItem("orbit-ski
 function addSkippedId(id){ const s=getSkippedIds(); if(!s.includes(id)){ s.push(id); localStorage.setItem("orbit-skipped",JSON.stringify(s.slice(-40))); } }
 function getLikedIds(){ try{ return JSON.parse(localStorage.getItem("orbit-liked")||"[]"); }catch(e){ return []; } }
 function addLikedId(id){ const s=getLikedIds(); if(!s.includes(id)){ s.push(id); localStorage.setItem("orbit-liked",JSON.stringify(s.slice(-40))); } }
-function compatPercent(score){ return Math.min(99, Math.max(40, Math.round(50 + score * 4))); }
 // Ranked deck of candidates to swipe through (best matches first).
 function deckCandidates(){
   const skipped=getSkippedIds(), liked=getLikedIds();
@@ -645,10 +644,10 @@ function renderSpeed(){
       <p>Swipe right to connect, left to pass — or use the buttons. Matched on shared interests, location, track, and school.</p>
     </div>
     ${deck.length?`
-      <div class="swipe-deck" id="swipe-deck">
-        ${deck.slice(0,3).map((r,i)=>swipeCardHTML(r.p,r.s,i)).join("")}
-      </div>
       <div class="swipe-hint muted">${deck.length} ${deck.length===1?"person":"people"} to meet</div>
+      <div class="swipe-deck" id="swipe-deck">
+        ${deck.slice(0,3).map((r,i)=>swipeCardHTML(r.p,i)).join("")}
+      </div>
     `:`<div class="empty" style="text-align:center;padding:40px 0">
         <div class="big" style="font-size:32px">You're all caught up ✨</div>
         <p class="muted">You've seen everyone for now. Check back as more AFEs join.</p>
@@ -656,10 +655,9 @@ function renderSpeed(){
       </div>`}`;
   if(deck.length) wireSwipe();
 }
-function swipeCardHTML(p, score, i){
+function swipeCardHTML(p, i){
   const reasons=connectionReasons(p);
   const why=reasons.length?reasons.slice(0,3):[{t:"A fresh connection this week"}];
-  const pct=compatPercent(score);
   const sharedSet=new Set((ME?.interests||[]).filter(x=>(p.interests||[]).includes(x)));
   const loc = p.city==="Remote / Virtual" ? "Virtual" : esc(p.city);
   const interests=(p.interests||[]).slice(0,6);
@@ -670,7 +668,6 @@ function swipeCardHTML(p, score, i){
       <div class="swipe-stamp like">CONNECT</div>
       <div class="swipe-stamp nope">PASS</div>
       <div class="sc-header">
-        <div class="match-pct">${pct}% match</div>
         ${avatarHTML(p,"av-xl")}
         <div class="nm">${esc(p.name)}</div>
         <div class="sc-badges">
