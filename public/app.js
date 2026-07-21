@@ -252,6 +252,26 @@ function ensureGroup(groupId){
   if(!CONVOS[key]){ const g=GROUPS.find(x=>x.id===groupId); CONVOS[key]={ key, type:"group", groupId, title:g?g.title:"", messages:[], unread:0 }; }
   return CONVOS[key];
 }
+// Full member list for a brown bag / group chat.
+window.openGroupMembers=function(gid){
+  const g=GROUPS.find(x=>x.id===gid); if(!g) return;
+  const mem=g.members.map(byId).filter(Boolean);
+  showModal(`
+    <div class="m-head"><h2>${safeEmoji(g.emoji)} ${esc(g.title)}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="m-body">
+      <p class="muted" style="margin-top:0">${mem.length} ${mem.length===1?"member":"members"}</p>
+      ${mem.length?mem.map(m=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+          ${avatarHTML(m,"av")}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:14px">${esc(m.name)}${ME&&m.id===ME.id?' <span class="muted" style="font-weight:400">(you)</span>':""}</div>
+            <div class="muted" style="font-size:12px">${esc(m.org||"")}${m.org&&m.city?" · ":""}${m.city==="Remote / Virtual"?"Virtual":esc(m.city||"")}</div>
+          </div>
+          <span class="track-badge ${m.track}">${m.track}</span>
+          ${ME&&m.id!==ME.id?`<button class="btn sm" onclick="closeModal();startDM('${m.id}')">Message</button>`:""}
+        </div>`).join(""):`<div class="empty">No members yet — be the first to join!</div>`}
+    </div>`);
+};
 function convMembers(c){
   if(c.type==="dm") return [ME, byId(c.peerId)].filter(Boolean);
   const g=GROUPS.find(x=>x.id===c.groupId); if(!g) return [ME].filter(Boolean);
@@ -848,11 +868,11 @@ function renderGroups(){
       </div>
       <div class="muted">${esc(g.desc)}</div>
       <div style="display:flex;align-items:center;justify-content:space-between">
-        <div class="members" title="${mem.map(m=>esc(m.name)).join(', ')}">
+        <div class="members" title="View all members" onclick="event.stopPropagation();openGroupMembers('${g.id}')" style="cursor:pointer">
           ${mem.slice(0,5).map(m=>avatarHTML(m,"av")).join("")}
           ${mem.length>5?`<span class="av" style="background:var(--panel-2);color:var(--ink-dim)">+${mem.length-5}</span>`:""}
         </div>
-        <span class="muted" style="font-size:12px">${mem.length} members</span>
+        <span class="muted" style="font-size:12px;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="View all members" onclick="event.stopPropagation();openGroupMembers('${g.id}')">${mem.length} members</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${iAmInvited?`
