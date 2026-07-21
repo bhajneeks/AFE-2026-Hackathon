@@ -37,7 +37,7 @@ function linkedinNote(person){
   const reasons=connectionReasons(person);
   const meName=ME?.name?.split(" ")[0] || "a fellow AFE";
   const hook=reasons.find(r=>r.key!=="alum")?.me || "we're both AFE interns";
-  let note=`Hi ${person.name.split(" ")[0]}, I'm ${meName} — ${hook}. Would love to connect here on LinkedIn and maybe grab coffee with you sometime!`;
+  let note=`Hi ${person.name.split(" ")[0]}, I'm ${meName} — ${hook}. Would love to connect here on LinkedIn and hopefully grab coffee with you sometime!`;
   return note.length>300 ? note.slice(0,297)+"…" : note;
 }
 
