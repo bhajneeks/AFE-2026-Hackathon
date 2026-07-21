@@ -572,7 +572,8 @@ function facePin(p, color, me=false, alum=false){
     : `${avatarStyle(p.name)};display:grid;place-items:center;font-weight:800;font-size:${me?13:12}px;color:#10182b`;
   const label = p.photo ? "" : initials(p.name);
   const isOnline = me || ONLINE_IDS.has(p.id);
-  const pulse = isOnline ? `<div class="presence-pulse"></div>` : "";
+  const pulseColor = me ? "#46d6a4" : color;
+  const pulse = isOnline ? `<div class="presence-pulse" style="border-color:${pulseColor}"></div>` : "";
   return L.divIcon({
     className:"", iconSize:[size,size], iconAnchor:[size/2,size/2],
     html:`<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${color};box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:visible;">

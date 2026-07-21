@@ -316,7 +316,7 @@
   }
   .presence-pulse {
     position:absolute; inset:-6px; border-radius:50%;
-    border:2px solid #46d6a4;
+    border:2px solid currentColor;
     animation:presencePulse 1.8s ease-out infinite;
     pointer-events:none;
   }
