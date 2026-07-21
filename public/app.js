@@ -390,7 +390,7 @@ window.addMemberToGroup=function(gid){
         ${nonMembers.slice(0,20).map(p=>`
           <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);cursor:pointer" onclick="confirmAddMember('${gid}','${p.id}')">
             ${avatarHTML(p,"av")}
-            <div><strong>${esc(p.name)}</strong><br><span class="muted" style="font-size:12px">${esc(p.city)}</span></div>
+            <div><strong>${esc(p.name)}</strong>${shows(p,"city")?`<br><span class="muted" style="font-size:12px">${esc(p.city)}</span>`:""}</div>
           </div>`).join("")}
       </div>
     </div>`);
@@ -498,6 +498,8 @@ function visiblePeople(){
 function trackColor(t){ return t==="SDE"?"#5ea0ff": t==="HDE"?"#cea968":"#ff8a4c"; }
 function trackLabel(t){ return t==="alumni"?"ALUM":t; }
 function availText(a){ return {coffee:"Open to coffee", dm:"Open to DMs", lunch:"Looking for lunch group", busy:"Busy this week"}[a]; }
+// Whether a person opted to show a given field. Defaults to visible when unset.
+function shows(p, key){ return p?.privacy?.[key] !== false; }
 
 function renderCards(){
   const list=visiblePeople(), wrap=$("#cards"); wrap.innerHTML="";
@@ -506,22 +508,28 @@ function renderCards(){
   for(const p of list){
     const reasons=connectionReasons(p);
     const sharedSet=new Set((reasons.find(r=>r.shared)?.shared)||[]);
+    // Respect each person's privacy toggles when building their sub-line.
+    const subBits=[esc(p.org)&&shows(p,"office")?esc(p.org):null,
+      shows(p,"city")?(p.city==="Remote / Virtual"?"Virtual":esc(p.city))+(p.building&&shows(p,"office")?` · ${esc(p.building)}`:""):null,
+      shows(p,"city")?tzOf(p.city):null].filter(Boolean);
+    const showInterests=shows(p,"interests");
+    const showLinkedin=p.linkedin&&shows(p,"linkedin");
     const card=document.createElement("div"); card.className="card";
     card.innerHTML=`
       <div class="top">
         ${avatarHTML(p,"av-lg")}
         <div style="flex:1">
           <div class="name">${esc(p.name)} <span class="track-badge ${p.track}">${trackLabel(p.track)}</span></div>
-          <div class="sub">${esc(p.org)} · ${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}${p.building?` · ${esc(p.building)}`:""} · ${tzOf(p.city)}</div>
+          ${subBits.length?`<div class="sub">${subBits.join(" · ")}</div>`:""}
         </div>
       </div>
-      <div style="margin-top:10px">${p.avail&&p.avail!=='coffee'?`<span class="avail ${p.avail}">${availText(p.avail)}</span> `:""}<span class="muted" style="font-size:12.5px">${esc(p.school)}</span></div>
-      <div class="meta">${(p.interests||[]).slice(0,5).map(i=>`<span class="tag ${sharedSet.has(i)?'match':''}">${esc(i)}</span>`).join("")}</div>
+      <div style="margin-top:10px">${p.avail&&p.avail!=='coffee'&&shows(p,"availability")?`<span class="avail ${p.avail}">${availText(p.avail)}</span> `:""}${shows(p,"school")?`<span class="muted" style="font-size:12.5px">${esc(p.school)}</span>`:""}</div>
+      ${showInterests?`<div class="meta">${(p.interests||[]).slice(0,5).map(i=>`<span class="tag ${sharedSet.has(i)?'match':''}">${esc(i)}</span>`).join("")}</div>`:""}
       ${p.topics?`<div class="meta">${p.topics.map(t=>`<span class="tag" style="border-color:var(--accent);color:var(--accent-2)">${esc(t)}</span>`).join("")}</div>`:""}
       ${reasons.length?`<div class="prompt"><div><b>Why reach out:</b> ${reasons.slice(0,2).map(r=>r.t).join(", ")}.</div></div>`:""}
       <div class="actions">
         <button class="btn primary sm" data-act="message" data-id="${p.id}">Message</button>
-        ${p.linkedin?`<button class="btn sm linkedin" data-act="linkedin" data-id="${p.id}"><span class="li-ic">in</span>Connect</button>`:""}
+        ${showLinkedin?`<button class="btn sm linkedin" data-act="linkedin" data-id="${p.id}"><span class="li-ic">in</span>Connect</button>`:""}
       </div>`;
     wrap.appendChild(card);
   }
@@ -576,13 +584,13 @@ function renderMap(){
       <div style="min-width:200px">
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
           <div style="width:38px;height:38px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-weight:800;color:#10182b;background-size:cover;background-position:center;${p.photo?`background-image:url('${safePhotoUrl(p.photo)}')`:avatarStyle(p.name)}">${p.photo?"":initials(p.name)}</div>
-          <div><b>${esc(p.name)}</b> <span style="font-size:10px;color:#888">${trackLabel(p.track)}</span><br><span style="color:#666;font-size:12px">${esc(p.org)}</span></div>
+          <div><b>${esc(p.name)}</b> <span style="font-size:10px;color:#888">${trackLabel(p.track)}</span>${shows(p,"office")?`<br><span style="color:#666;font-size:12px">${esc(p.org)}</span>`:""}</div>
         </div>
-        <div style="color:#777;font-size:12px">${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}${p.building?` · ${esc(p.building)}`:""} · ${tzOf(p.city)} · ${esc(p.school)}</div>
+        <div style="color:#777;font-size:12px">${[shows(p,"city")?(p.city==="Remote / Virtual"?"Virtual":esc(p.city))+(p.building&&shows(p,"office")?` · ${esc(p.building)}`:"")+` · ${tzOf(p.city)}`:null, shows(p,"school")?esc(p.school):null].filter(Boolean).join(" · ")}</div>
         ${reasons.length?`<div style="margin-top:6px;color:#0a7;font-size:12px">${reasons[0].t}</div>`:""}
         <div style="display:flex;gap:6px;margin-top:9px">
           <button onclick="startDM('${p.id}')" style="flex:1;padding:7px;border:none;border-radius:8px;background:linear-gradient(180deg,#ffb27a,#ff8a4c);color:#26140a;font-weight:800;cursor:pointer">Message</button>
-          ${p.linkedin?`<button onclick="openLinkedIn('${p.id}')" title="Connect on LinkedIn" style="padding:7px 10px;border:none;border-radius:8px;background:#0a66c2;color:#fff;font-weight:800;cursor:pointer">in</button>`:""}
+          ${p.linkedin&&shows(p,"linkedin")?`<button onclick="openLinkedIn('${p.id}')" title="Connect on LinkedIn" style="padding:7px 10px;border:none;border-radius:8px;background:#0a66c2;color:#fff;font-weight:800;cursor:pointer">in</button>`:""}
         </div>
       </div>`);
   }
@@ -673,20 +681,20 @@ function swipeCardHTML(p, i){
         <div class="sc-badges">
           <span class="track-badge ${p.track}">${trackLabel(p.track)}</span>
           ${p.afe_class?`<span class="track-badge afe">AFE '${p.afe_class.slice(-2)}</span>`:""}
-          ${p.avail&&p.avail!=="busy"?`<span class="avail ${p.avail}">${availText(p.avail)}</span>`:""}
+          ${p.avail&&p.avail!=="busy"&&shows(p,"availability")?`<span class="avail ${p.avail}">${availText(p.avail)}</span>`:""}
         </div>
       </div>
       <div class="sc-body">
         <div class="sc-facts">
-          ${p.org?`<div class="sc-fact"><span class="ic">🏢</span>${esc(p.org)}</div>`:""}
-          <div class="sc-fact"><span class="ic">📍</span>${loc}${p.building?` · ${esc(p.building)}`:""} · ${tzOf(p.city)}</div>
-          ${p.school?`<div class="sc-fact"><span class="ic">🎓</span>${esc(p.school)}</div>`:""}
+          ${p.org&&shows(p,"office")?`<div class="sc-fact"><span class="ic">🏢</span>${esc(p.org)}</div>`:""}
+          ${shows(p,"city")?`<div class="sc-fact"><span class="ic">📍</span>${loc}${p.building&&shows(p,"office")?` · ${esc(p.building)}`:""} · ${tzOf(p.city)}</div>`:""}
+          ${p.school&&shows(p,"school")?`<div class="sc-fact"><span class="ic">🎓</span>${esc(p.school)}</div>`:""}
         </div>
         <div class="sc-section">
           <div class="sc-label">Why you'll click</div>
           <div class="why">${why.map(r=>`<span class="r">${r.t}</span>`).join("")}</div>
         </div>
-        ${interests.length?`
+        ${interests.length&&shows(p,"interests")?`
         <div class="sc-section">
           <div class="sc-label">Into</div>
           <div class="sc-interests">${interests.map(x=>`<span class="tag ${sharedSet.has(x)?'match':''}">${sharedSet.has(x)?'★ ':''}${esc(x)}</span>`).join("")}</div>
@@ -1248,12 +1256,12 @@ function openPrivacy(){
     ["onMap","Show me on the map","Pin at city center only — never exact"],
     ["city","Show my city",""],["office","Show my team / org",""],["school","Show my school",""],
     ["interests","Show my interests",""],["availability","Show my availability status",""],
-    ["linkedin","Show my LinkedIn",""],["email","Allow direct messages","Let other AFEs start a 1:1 chat with you"],
+    ["linkedin","Show my LinkedIn","Hide it to remove the Connect button on your card"],
   ];
   showModal(`
     <div class="m-head"><h2>Privacy & consent</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="m-body">
-      <div class="consent-box" style="margin-bottom:16px">🛡️ <div><b>Safety layer:</b> No one sees you on the map or can contact you unless you opt in. Exact location is never shown — only your city. Turn anything off and it disappears for everyone instantly.</div></div>
+      <div class="consent-box" style="margin-bottom:16px">🛡️ <div><b>Safety layer:</b> Exact location is never shown — only your city, and only if you opt in. Turn anything off and it disappears from your cards for everyone instantly.</div></div>
       ${rows.map(([k,l,s])=>`<div class="privacy-row"><div class="pl">${l}${s?`<small>${s}</small>`:""}</div><button class="switch ${P[k]?'on':''}" data-priv="${k}"></button></div>`).join("")}
     </div>
     <div class="m-foot"><button class="btn primary" onclick="closeModal();renderAll()">Done</button></div>`);
