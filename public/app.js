@@ -1268,9 +1268,16 @@ function openPrivacy(){
       <div class="consent-box" style="margin-bottom:16px">🛡️ <div><b>Safety layer:</b> Exact location is never shown — only your city, and only if you opt in. Turn anything off and it disappears from your cards for everyone instantly.</div></div>
       ${rows.map(([k,l,s])=>`<div class="privacy-row"><div class="pl">${l}${s?`<small>${s}</small>`:""}</div><button class="switch ${P[k]?'on':''}" data-priv="${k}"></button></div>`).join("")}
     </div>
-    <div class="m-foot"><button class="btn primary" onclick="closeModal();renderAll()">Done</button></div>`);
+    <div class="m-foot"><button class="btn primary" onclick="savePrivacy()">Done</button></div>`);
 }
-document.addEventListener("click", e=>{ const sw=e.target.closest("[data-priv]"); if(sw&&ME){ const k=sw.dataset.priv; ME.privacy[k]=!ME.privacy[k]; sw.classList.toggle("on", ME.privacy[k]); } });
+// Persist privacy toggles to Supabase so they apply for everyone, not just this browser.
+window.savePrivacy=async function(){
+  closeModal(); renderAll();
+  if(!ME) return;
+  const { error } = await db.from('users').update({ privacy: ME.privacy }).eq('id', ME.id);
+  if(error){ console.error('Privacy save error:', error); toast("Couldn't save privacy — try again"); }
+};
+document.addEventListener("click", e=>{ const sw=e.target.closest(".privacy-row [data-priv]:not(#g-private)"); if(sw&&ME){ const k=sw.dataset.priv; ME.privacy[k]=!ME.privacy[k]; sw.classList.toggle("on", ME.privacy[k]); } });
 
 /* ============================================================================
    LIVE PRESENCE  — who's online right now via Supabase Realtime presence
