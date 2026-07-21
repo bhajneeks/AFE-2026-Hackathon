@@ -2206,6 +2206,10 @@ async function boot(){
   if(localStorage.getItem("orbit-deleted")){
     await db.auth.signOut().catch(()=>{});
     localStorage.removeItem("orbit-deleted");
+    // Show landing page instead of login
+    $("#login").classList.add("hidden");
+    $("#landing").classList.remove("hidden");
+    initLandingReveal();
     return;
   }
 
@@ -2213,6 +2217,11 @@ async function boot(){
   const { data: { session } } = await db.auth.getSession();
   if(session){
     await handleAuthSession(session);
+  } else {
+    // No session — show landing page (not login) for new visitors
+    $("#login").classList.add("hidden");
+    $("#landing").classList.remove("hidden");
+    initLandingReveal();
   }
 
   // Listen for auth state changes (handles redirect back from Google)
