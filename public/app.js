@@ -183,6 +183,8 @@ function jitter(city, seed){
   return { lat:c.lat+dy*0.16, lng:c.lng+dx*0.20 };
 }
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+const EMOJI_MAP={bento:"🥗",microphone:"🎤",bar_chart:"📊",standing_person:"🧍",coffee:"☕"};
+function safeEmoji(e){ if(!e) return "☕"; if(e.startsWith(":")) { const k=e.replace(/:/g,""); return EMOJI_MAP[k]||"☕"; } return e; }
 
 /* ============================================================================
    CONNECTION REASONS + MESSAGE GENERATORS (DM opener + LinkedIn note)
@@ -204,15 +206,7 @@ function connectionReasons(person){
 }
 // A short opener for an in-app Orbit DM (used to seed a new conversation).
 function coffeeMessage(person){
-  const reasons=connectionReasons(person);
-  const meName=ME?.name?.split(" ")[0] || "there";
-  const hook=reasons.find(r=>r.key!=="alum")?.me || "we're both AFE interns this summer";
-  const shared=reasons.find(r=>r.key==="interest")?.shared;
-  const interestBit=shared?` — especially ${shared[0]}`:"";
-  if(person.track==="alumni"){
-    return `Hi ${person.name.split(" ")[0]}! I'm ${meName}, an AFE intern this summer. I saw you're an alum open to coffee chats${person.topics?` (would love to hear about ${person.topics[0]})`:""}. Any chance you'd be up for a 15-min virtual coffee this week? No pressure at all!`;
-  }
-  return `Hi ${person.name.split(" ")[0]}! Noticed ${hook}${interestBit}. I'm ${meName} — also figuring things out this summer. Up for a low-key 15-min coffee chat this week? Totally fine if not!`;
+  return `Hey ${person.name.split(" ")[0]}!`;
 }
 /* LinkedIn logic (normalizeLinkedIn, linkedinURL, linkedinNote, openLinkedIn)
    lives in linkedin.js — loaded after this file. */
@@ -252,11 +246,26 @@ function convMembers(c){
 function lastMessage(c){ return c.messages[c.messages.length-1]; }
 function totalUnread(){ return Object.values(CONVOS).reduce((n,c)=>n+(c.unread||0),0); }
 
+let _loadingHistory = false;
+function getLastSeen(key){ return parseInt(localStorage.getItem("orbit-seen-"+key)||"0",10); }
+function setLastSeen(key){ localStorage.setItem("orbit-seen-"+key, String(Date.now())); }
+
 function pushMessage(key, fromId, text, ts){
   const c=CONVOS[key]; if(!c) return;
   if(c.messages.find(m=>m.from===fromId && m.text===text && m.ts===ts)) return;
   c.messages.push({ from:fromId, text, ts: ts||now() });
-  if(fromId!==ME.id && OPEN_CHAT!==key) c.unread=(c.unread||0)+1;
+  const msgTs = ts || now();
+  if(fromId!==ME.id && OPEN_CHAT!==key){
+    if(_loadingHistory){
+      if(msgTs > getLastSeen(key)) c.unread=(c.unread||0)+1;
+    } else {
+      c.unread=(c.unread||0)+1;
+      // Live notification toast
+      const sender = PEOPLE.find(p=>p.id===fromId);
+      const senderName = sender ? sender.name.split(" ")[0] : "Someone";
+      toast(`${senderName}: ${text.length>40?text.slice(0,40)+"…":text}`);
+    }
+  }
   refreshMessagingUI();
 }
 
@@ -323,13 +332,13 @@ function refreshMessagingUI(){
 function updateMsgBadge(){
   const tab=$("#tab-messages"); if(!tab) return;
   const n=totalUnread();
-  tab.innerHTML = `💬 <span>Messages</span>${n?`<span class="badge">${n}</span>`:""}`;
+  tab.innerHTML = `<span>Messages</span>${n?`<span class="badge">${n}</span>`:""}`;
 }
 
 /* ---------- Chat modal ---------- */
 function openChat(key){
   const c=CONVOS[key]; if(!c) return;
-  OPEN_CHAT=key; c.unread=0; updateMsgBadge();
+  OPEN_CHAT=key; c.unread=0; setLastSeen(key); updateMsgBadge();
   const members=convMembers(c);
   const sub = c.type==="dm"
     ? `${byId(c.peerId)?.org||""} · ${byId(c.peerId)?.city||""}`
@@ -341,8 +350,9 @@ function openChat(key){
   $("#modal").innerHTML=`
     <div class="chat-head">
       ${headAvatar}
-      <div class="ct"><div class="t">${c.type==="group"?"☕ ":""}${esc(c.title)}</div><div class="s">${esc(sub)}</div></div>
+      <div class="ct"><div class="t">${c.type==="group"?"":""}${esc(c.title)}</div><div class="s">${esc(sub)}</div></div>
       ${c.type==="dm" && byId(c.peerId)?.linkedin ? `<button class="btn sm linkedin" onclick="openLinkedIn('${c.peerId}')"><span class="li-ic">in</span>Connect</button>`:""}
+      ${c.type==="group"?`<button class="btn sm danger" onclick="leaveGroup('${c.groupId}')">Leave</button>`:""}
       <button class="x" onclick="closeChat()">×</button>
     </div>
     <div class="chat-body" id="chat-body"></div>
@@ -365,6 +375,16 @@ function openChat(key){
   renderChatBody(); setTimeout(()=>input.focus(),50);
 }
 function closeChat(){ OPEN_CHAT=null; $("#modal").className="modal"; closeModal(); }
+window.leaveGroup=async function(gid){
+  if(!ME) return;
+  const g=GROUPS.find(x=>x.id===gid); if(!g) return;
+  if(!confirm(`Leave "${g.title}"? You can rejoin later if it's public.`)) return;
+  const { error } = await db.from('group_members').delete().eq('group_id', gid).eq('user_id', ME.id);
+  if(error){ console.error('leaveGroup failed:', error); toast("Couldn't leave — try again"); return; }
+  g.members = g.members.filter(id=>id!==ME.id);
+  delete CONVOS[grpKey(gid)];
+  closeChat(); renderGroups(); toast(`Left "${g.title}"`);
+};
 function renderChatBody(){
   const body=$("#chat-body"); if(!body||!OPEN_CHAT) return;
   const c=CONVOS[OPEN_CHAT];
@@ -395,15 +415,15 @@ function renderInbox(){
     return g && ME && g.members.includes(ME.id);
   });
   convos.sort((a,b)=>{ const la=lastMessage(a)?.ts||0, lb=lastMessage(b)?.ts||0; return lb-la; });
-  wrap.innerHTML=`<h2>💬 Messages</h2><p class="muted">Your Orbit DMs and brown-bag group chats.</p>`;
+  wrap.innerHTML=`<h2>Messages</h2><p class="muted">Your Orbit DMs and brown-bag group chats.</p>`;
   if(!convos.length){
-    wrap.innerHTML+=`<div class="empty"><div class="big">💬</div>No conversations yet.<br><span class="muted">Hit <b>Message</b> on someone's card, or join a brown bag to start chatting.</span></div>`;
+    wrap.innerHTML+=`<div class="empty"><div class="big" style="font-size:32px">No messages</div>No conversations yet.<br><span class="muted">Hit <b>Message</b> on someone's card, or join a brown bag to start chatting.</span></div>`;
     return;
   }
   for(const c of convos){
     const last=lastMessage(c);
     const preview = last ? `${last.from===ME.id?"You: ":""}${last.text}` : "No messages yet — say hi!";
-    const icon = c.type==="dm" ? avatarHTML(byId(c.peerId)||{name:c.title},"av-lg") : `<div class="grp-ic">${(GROUPS.find(g=>g.id===c.groupId)?.emoji)||"☕"}</div>`;
+    const icon = c.type==="dm" ? avatarHTML(byId(c.peerId)||{name:c.title},"av-lg") : `<div class="grp-ic">${safeEmoji(GROUPS.find(g=>g.id===c.groupId)?.emoji)}</div>`;
     const row=document.createElement("div"); row.className="conv"; row.onclick=()=>openChat(c.key);
     row.innerHTML=`
       ${icon}
@@ -453,7 +473,7 @@ function availText(a){ return {coffee:"Open to coffee", dm:"Open to DMs", lunch:
 function renderCards(){
   const list=visiblePeople(), wrap=$("#cards"); wrap.innerHTML="";
   $("#count-bar-list").innerHTML=`<b>${list.length}</b> ${list.length===1?"AFE":"AFEs"} match your filters`;
-  if(!list.length){ wrap.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="big">🛰️</div>No one matches yet — try loosening a filter.</div>`; return; }
+  if(!list.length){ wrap.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="big"></div>No one matches yet — try loosening a filter.</div>`; return; }
   for(const p of list){
     const reasons=connectionReasons(p);
     const sharedSet=new Set((reasons.find(r=>r.shared)?.shared)||[]);
@@ -463,15 +483,15 @@ function renderCards(){
         ${avatarHTML(p,"av-lg")}
         <div style="flex:1">
           <div class="name">${esc(p.name)} <span class="track-badge ${p.track}">${trackLabel(p.track)}</span></div>
-          <div class="sub">${esc(p.org)} · ${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)}${p.building?` · 🏢 ${esc(p.building)}`:""} · 🕒 ${tzOf(p.city)}</div>
+          <div class="sub">${esc(p.org)} · ${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}${p.building?` · ${esc(p.building)}`:""} · ${tzOf(p.city)}</div>
         </div>
       </div>
-      <div style="margin-top:10px"><span class="avail ${p.avail}">${availText(p.avail)}</span> <span class="muted" style="font-size:12.5px">· ${esc(p.school)}</span></div>
+      <div style="margin-top:10px">${p.avail&&p.avail!=='coffee'?`<span class="avail ${p.avail}">${availText(p.avail)}</span> `:""}<span class="muted" style="font-size:12.5px">${esc(p.school)}</span></div>
       <div class="meta">${(p.interests||[]).slice(0,5).map(i=>`<span class="tag ${sharedSet.has(i)?'match':''}">${esc(i)}</span>`).join("")}</div>
-      ${p.topics?`<div class="meta">${p.topics.map(t=>`<span class="tag" style="border-color:var(--accent);color:var(--accent-2)">💬 ${esc(t)}</span>`).join("")}</div>`:""}
-      ${reasons.length?`<div class="prompt">✨ <div><b>Why reach out:</b> ${reasons.slice(0,2).map(r=>r.t).join(", ")}.</div></div>`:""}
+      ${p.topics?`<div class="meta">${p.topics.map(t=>`<span class="tag" style="border-color:var(--accent);color:var(--accent-2)">${esc(t)}</span>`).join("")}</div>`:""}
+      ${reasons.length?`<div class="prompt"><div><b>Why reach out:</b> ${reasons.slice(0,2).map(r=>r.t).join(", ")}.</div></div>`:""}
       <div class="actions">
-        <button class="btn primary sm" data-act="message" data-id="${p.id}">💬 Message</button>
+        <button class="btn primary sm" data-act="message" data-id="${p.id}">Message</button>
         ${p.linkedin?`<button class="btn sm linkedin" data-act="linkedin" data-id="${p.id}"><span class="li-ic">in</span>Connect</button>`:""}
       </div>`;
     wrap.appendChild(card);
@@ -529,10 +549,10 @@ function renderMap(){
           <div style="width:38px;height:38px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-weight:800;color:#10182b;background-size:cover;background-position:center;${p.photo?`background-image:url('${safePhotoUrl(p.photo)}')`:avatarStyle(p.name)}">${p.photo?"":initials(p.name)}</div>
           <div><b>${esc(p.name)}</b> <span style="font-size:10px;color:#888">${trackLabel(p.track)}</span><br><span style="color:#666;font-size:12px">${esc(p.org)}</span></div>
         </div>
-        <div style="color:#777;font-size:12px">${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)}${p.building?` · 🏢 ${esc(p.building)}`:""} · ${tzOf(p.city)} · ${esc(p.school)}</div>
-        ${reasons.length?`<div style="margin-top:6px;color:#0a7;font-size:12px">✨ ${reasons[0].t}</div>`:""}
+        <div style="color:#777;font-size:12px">${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}${p.building?` · ${esc(p.building)}`:""} · ${tzOf(p.city)} · ${esc(p.school)}</div>
+        ${reasons.length?`<div style="margin-top:6px;color:#0a7;font-size:12px">${reasons[0].t}</div>`:""}
         <div style="display:flex;gap:6px;margin-top:9px">
-          <button onclick="startDM('${p.id}')" style="flex:1;padding:7px;border:none;border-radius:8px;background:linear-gradient(180deg,#ffb27a,#ff8a4c);color:#26140a;font-weight:800;cursor:pointer">💬 Message</button>
+          <button onclick="startDM('${p.id}')" style="flex:1;padding:7px;border:none;border-radius:8px;background:linear-gradient(180deg,#ffb27a,#ff8a4c);color:#26140a;font-weight:800;cursor:pointer">Message</button>
           ${p.linkedin?`<button onclick="openLinkedIn('${p.id}')" title="Connect on LinkedIn" style="padding:7px 10px;border:none;border-radius:8px;background:#0a66c2;color:#fff;font-weight:800;cursor:pointer">in</button>`:""}
         </div>
       </div>`);
@@ -564,83 +584,110 @@ function currentRound(){ const period=state.cadence==="week"?7:14; return Math.f
 function daysUntilNextRound(){ const period=state.cadence==="week"?7:14; return period - (daysSinceEpoch()%period); }
 function pairScore(p){
   if(!ME) return 0; let s=0;
-  s += (p.interests||[]).filter(i=>(ME.interests||[]).includes(i)).length*2;
-  if(p.city===ME.city && p.city!=="Remote / Virtual") s+=2;
-  if(sameBuilding(p.building, ME.building)) s+=3; // same building = easiest to meet in person
-  if(tzOf(p.city)===tzOf(ME.city) && tzOf(ME.city)!=="—") s+=1;
-  if(p.track===ME.track) s+=1;
-  if(sameSchool(p.school, ME.school)) s+=3;
-  if(p.newToo && ME.newToo) s+=1;
-  return s;
+  const sharedInterests = (p.interests||[]).filter(i=>(ME.interests||[]).includes(i));
+  s += sharedInterests.length * 3;
+  if(p.city===ME.city && p.city!=="Remote / Virtual") s+=4;
+  if(sameBuilding(p.building, ME.building)) s+=5;
+  if(tzOf(p.city)===tzOf(ME.city) && tzOf(ME.city)!=="---") s+=2;
+  if(p.track===ME.track) s+=2;
+  if(p.track!==ME.track) s+=1; // slight diversity bonus
+  if(sameSchool(p.school, ME.school)) s+=4;
+  if(p.newToo && ME.newToo) s+=2;
+  if(p.afe_class && ME.afe_class && p.afe_class===ME.afe_class) s+=3;
+  // Penalize if no overlap at all
+  if(sharedInterests.length===0 && p.city!==ME.city && !sameSchool(p.school,ME.school)) s-=3;
+  return Math.max(0, s);
 }
+function getSkippedIds(){ try{ return JSON.parse(localStorage.getItem("orbit-skipped")||"[]"); }catch(e){ return []; } }
+function addSkippedId(id){ const s=getSkippedIds(); if(!s.includes(id)){ s.push(id); localStorage.setItem("orbit-skipped",JSON.stringify(s.slice(-20))); } }
 function pairForRound(round){
-  const pool=PEOPLE.filter(p=>p.avail!=="busy" && !(ME&&p.id===ME.id));
+  const skipped = getSkippedIds();
+  const pool=PEOPLE.filter(p=>p.avail!=="busy" && !(ME&&p.id===ME.id) && !skipped.includes(p.id));
   if(!pool.length) return null;
   const ranked=pool.map(p=>({p,s:pairScore(p)})).sort((a,b)=>b.s-a.s);
-  const topN=Math.min(10, ranked.length);
+  // Pick from top candidates with some deterministic variety per round
+  const topN=Math.min(5, ranked.length);
   const seed=hashHue(ME?.id||"me");
   const idx=(round+seed)%topN;
-  return ranked[idx].p;
+  return ranked[idx];
 }
+function compatPercent(score){ return Math.min(99, Math.max(40, Math.round(50 + score * 4))); }
 function renderSpeed(){
   const wrap=$("#sd-wrap");
   const round=currentRound();
-  const partner=pairForRound(round);
+  const result=pairForRound(round);
+  const partner=result?.p||null;
+  const score=result?.s||0;
   const past=[pairForRound(round-1), pairForRound(round-2)].filter(Boolean);
   wrap.innerHTML=`
     <div class="sd-hero">
-      <h2>⚡ Pair Up</h2>
-      <p>Each round, Orbit pairs you with one fellow AFE to meet — matched on interests, location, and track. A low-pressure way to expand your network one intro at a time.</p>
+      <h2>Pair Up</h2>
+      <p>Matched on shared interests, location, track, and school. One intro per round — skip if it's not the right fit.</p>
     </div>
     <div class="sd-controls">
       <div class="seg" id="cadence-seg">
         <button data-cad="week" class="${state.cadence==='week'?'on':''}">Weekly</button>
-        <button data-cad="biweek" class="${state.cadence==='biweek'?'on':''}">Every 2 weeks</button>
+        <button data-cad="biweek" class="${state.cadence==='biweek'?'on':''}">Biweekly</button>
       </div>
-      <div class="sd-round">Round <b>#${round}</b> · next pairing in <b>${daysUntilNextRound()} day${daysUntilNextRound()===1?'':'s'}</b></div>
+      <div class="sd-round">Round <b>#${round}</b> — next in <b>${daysUntilNextRound()}d</b></div>
     </div>
-    ${partner?matchCardHTML(partner):`<div class="empty"><div class="big">🛰️</div>No one available to pair with this round.</div>`}
+    ${partner?matchCardHTML(partner,score):`<div class="empty"><div class="big" style="font-size:32px">No matches</div><p class="muted">Everyone's paired or skipped. Check back next round.</p></div>`}
     ${past.length?`
       <div class="sd-history">
-        <h3>Previous rounds</h3>
-        ${past.map((p,i)=>`
+        <h3>Previous</h3>
+        ${past.map((r,i)=>r?.p?`
           <div class="row">
-            ${avatarHTML(p,"av")}
-            <div><div class="nm">${esc(p.name)}</div><div class="muted" style="font-size:12px">${esc(p.org)} · ${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}</div></div>
-            <button class="btn sm" onclick="startDM('${p.id}')">💬 Message</button>
-            <span class="rn">round #${round-1-i}</span>
-          </div>`).join("")}
+            ${avatarHTML(r.p,"av")}
+            <div><div class="nm">${esc(r.p.name)}</div><div class="muted" style="font-size:12px">${esc(r.p.org)} · ${r.p.city==="Remote / Virtual"?"Virtual":esc(r.p.city)}</div></div>
+            <button class="btn sm" onclick="startDM('${r.p.id}')">Message</button>
+            <span class="rn">#${round-1-i}</span>
+          </div>`:"").join("")}
       </div>`:""}`;
 }
-function matchCardHTML(p){
+function matchCardHTML(p, score){
   const reasons=connectionReasons(p);
-  const why=reasons.length?reasons.slice(0,3):[{t:"a fresh face to meet this week"}];
+  const why=reasons.length?reasons.slice(0,3):[{t:"A fresh connection this week"}];
+  const pct=compatPercent(score);
   return `
     <div class="match-card">
-      <div class="wholine">Your pairing this round</div>
-      ${avatarHTML(p,"av-xl")}
-      <div class="nm">${esc(p.name)} <span class="track-badge ${p.track}" style="vertical-align:middle">${trackLabel(p.track)}</span></div>
-      <div class="role">${esc(p.org)} · ${p.city==="Remote / Virtual"?"🌐 Virtual":esc(p.city)}${p.building?` · 🏢 ${esc(p.building)}`:""} · 🕒 ${tzOf(p.city)}</div>
-      <div class="role" style="margin-top:6px">🎓 ${esc(p.school)} · <span class="avail ${p.avail}" style="vertical-align:middle">${availText(p.avail)}</span></div>
-      <div class="why">${why.map(r=>`<span class="r">✨ ${r.t}</span>`).join("")}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div class="wholine">YOUR MATCH</div>
+        <div style="background:var(--accent);color:#000;padding:4px 10px;border-radius:var(--radius-pill);font-size:12px;font-weight:800">${pct}% match</div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:center">
+        ${avatarHTML(p,"av-xl")}
+        <div>
+          <div class="nm">${esc(p.name)} <span class="track-badge ${p.track}" style="vertical-align:middle">${trackLabel(p.track)}</span>${p.afe_class?` <span class="track-badge" style="background:var(--accent-tint);color:var(--accent)">AFE '${p.afe_class.slice(-2)}</span>`:""}</div>
+          <div class="role">${esc(p.org)}${p.org?" · ":""}${p.city==="Remote / Virtual"?"Virtual":esc(p.city)}${p.building?` · ${esc(p.building)}`:""}</div>
+          <div class="role" style="margin-top:4px">${esc(p.school)} · ${tzOf(p.city)}</div>
+        </div>
+      </div>
+      <div class="why" style="margin-top:14px">${why.map(r=>`<span class="r">${r.t}</span>`).join("")}</div>
       <div class="cta">
-        <button class="btn primary" onclick="startDM('${p.id}')">💬 Message ${esc(p.name.split(" ")[0])}</button>
-        ${p.linkedin?`<button class="btn linkedin" onclick="openLinkedIn('${p.id}')"><span class="li-ic">in</span>Connect on LinkedIn</button>`:""}
+        <button class="btn primary" onclick="startDM('${p.id}')">Message ${esc(p.name.split(" ")[0])}</button>
+        ${p.linkedin?`<button class="btn linkedin" onclick="openLinkedIn('${p.id}')"><span class="li-ic">in</span>Connect</button>`:""}
+        <button class="btn ghost" onclick="skipMatch('${p.id}')" style="margin-left:auto">Skip</button>
       </div>
     </div>`;
 }
+window.skipMatch=function(id){
+  addSkippedId(id);
+  toast("Skipped — you won't see them again");
+  renderSpeed();
+};
 
 /* ---------- Groups ---------- */
 function renderGroups(){
   const wrap=$("#groups"); wrap.innerHTML="";
   for(const g of GROUPS){
+    if(g.private && ME && !g.members.includes(ME.id)) continue;
     const mem=g.members.map(byId).filter(Boolean);
     const joined=ME && g.members.includes(ME.id);
     const card=document.createElement("div"); card.className="group-card";
     card.innerHTML=`
       <div style="display:flex;gap:12px;align-items:center">
-        <div class="emoji">${g.emoji}</div>
-        <div style="flex:1"><div class="title">${esc(g.title)}</div>${g.city?`<div class="muted" style="font-size:12px">📍 ${esc(g.city)}</div>`:`<div class="muted" style="font-size:12px">🌐 Anywhere</div>`}</div>
+        <div class="emoji">${safeEmoji(g.emoji)}</div>
+        <div style="flex:1"><div class="title">${esc(g.title)}${g.private?` <span style="font-size:10px;opacity:.6"></span>`:""}</div>${g.city?`<div class="muted" style="font-size:12px">${esc(g.city)}</div>`:`<div class="muted" style="font-size:12px">Anywhere</div>`}</div>
       </div>
       <div class="muted">${esc(g.desc)}</div>
       <div style="display:flex;align-items:center;justify-content:space-between">
@@ -652,7 +699,7 @@ function renderGroups(){
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn ${joined?'':'primary'}" style="flex:1" data-group="${g.id}">${joined?'✓ Joined':'Join brown bag'}</button>
-        ${joined?`<button class="btn primary" data-openchat="${g.id}">💬 Open chat</button>`:""}
+        ${joined?`<button class="btn primary" data-openchat="${g.id}">Open chat</button>`:""}
       </div>`;
     wrap.appendChild(card);
   }
@@ -666,7 +713,7 @@ function renderAll(){ renderCards(); renderMap(); renderSpeed(); renderGroups();
 function buildFilterChips(){
   const cf=$("#city-filters"); cf.innerHTML="";
   Object.keys(CITIES).forEach(c=>{ const s=document.createElement("span"); s.className="chip"; s.dataset.city=c;
-    s.textContent=c==="Remote / Virtual"?"🌐 Virtual":c.split(",")[0]; cf.appendChild(s); });
+    s.textContent=c==="Remote / Virtual"?"Virtual":c.split(",")[0]; cf.appendChild(s); });
   const inf=$("#interest-filters"); inf.innerHTML="";
   INTERESTS.forEach(i=>{ const s=document.createElement("span"); s.className="chip"; s.dataset.interest=i; s.textContent=i; inf.appendChild(s); });
   buildBuildingChips();
@@ -681,7 +728,7 @@ function buildBuildingChips(){
   const list=[...set].sort();
   bf.innerHTML="";
   if(!list.length){ bf.innerHTML=`<span class="muted" style="font-size:12px">No buildings yet</span>`; return; }
-  list.forEach(b=>{ const s=document.createElement("span"); s.className="chip"+(state.buildings.has(b)?" on":""); s.dataset.building=b; s.textContent="🏢 "+b; bf.appendChild(s); });
+  list.forEach(b=>{ const s=document.createElement("span"); s.className="chip"+(state.buildings.has(b)?" on":""); s.dataset.building=b; s.textContent=""+b; bf.appendChild(s); });
   if(typeof updateFilterCounts==="function") updateFilterCounts();
 }
 function wireFilters(){
@@ -830,7 +877,7 @@ window.startDM=async function(peerId){
     if(foot && !document.querySelector("#intro-suggest")){
       const bar=document.createElement("div");
       bar.id="intro-suggest";
-      bar.innerHTML=`<button class="suggest-chip">✨ Use suggested intro</button>`;
+      bar.innerHTML=`<button class="suggest-chip">Use suggested intro</button>`;
       foot.parentNode.insertBefore(bar, foot);
       bar.querySelector("button").addEventListener("click", ()=>{
         const input=$("#chat-input");
@@ -853,26 +900,29 @@ $("#modal-back").addEventListener("click", e=>{ if(e.target.id==="modal-back") c
 /* ---------- New brown bag ---------- */
 $("#new-group").addEventListener("click", ()=>{
   showModal(`
-    <div class="m-head"><h2>➕ New brown bag</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="m-head"><h2>New brown bag</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="m-body">
       <div class="two-col">
         <label class="fld"><span class="lab">Emoji</span><input id="g-emoji" value="☕" maxlength="2"></label>
         <label class="fld"><span class="lab">City (optional)</span>
-          <select id="g-city"><option value="">🌐 Anywhere / Virtual</option>${Object.keys(CITIES).map(c=>`<option>${c}</option>`).join("")}</select></label>
+          <select id="g-city"><option value="">Anywhere / Virtual</option>${Object.keys(CITIES).map(c=>`<option>${c}</option>`).join("")}</select></label>
       </div>
       <label class="fld"><span class="lab">Title</span><input id="g-title" placeholder="e.g. Seattle AFEs lunch"></label>
       <label class="fld"><span class="lab">Description</span><textarea id="g-desc" placeholder="What's this group for?"></textarea></label>
+      <div class="privacy-row"><div class="pl">Private group<small>Only invited members can see and join</small></div><button class="switch" id="g-private" data-priv="private"></button></div>
     </div>
     <div class="m-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" onclick="createGroup()">Create & join</button></div>`);
 });
+document.addEventListener("click", e=>{ const sw=e.target.closest("#g-private"); if(sw) sw.classList.toggle("on"); });
 window.createGroup=async function(){
   const title=$("#g-title").value.trim(); if(!title){ toast("Give it a title first"); return; }
+  const isPrivate = $("#g-private")?.classList.contains("on") || false;
   const { data } = await db.from('groups').insert({
-    emoji: $("#g-emoji").value||"☕", title, description: $("#g-desc").value||"", city: $("#g-city").value, created_by: ME.id
+    emoji: $("#g-emoji").value||"☕", title, description: $("#g-desc").value||"", city: $("#g-city").value, created_by: ME.id, private: isPrivate
   }).select().single();
   if(data){
     await db.from('group_members').insert({ group_id: data.id, user_id: ME.id });
-    const group = { id: data.id, emoji: data.emoji, title: data.title, desc: data.description, city: data.city, members: [ME.id] };
+    const group = { id: data.id, emoji: data.emoji, title: data.title, desc: data.description, city: data.city, members: [ME.id], private: data.private };
     GROUPS.unshift(group); ensureGroup(group.id);
     closeModal(); renderGroups(); toast(`Created "${title}" ✓`);
     openGroupChat(group.id);
@@ -887,20 +937,44 @@ $("#me-chip").addEventListener("click", ()=> ME && viewMyProfile());
 // One-click view of your own card — exactly what other AFEs see.
 window.viewMyProfile=function(){
   if(!ME) return;
+  const afeTag = ME.afe_class ? `<span class="track-badge" style="background:var(--accent-tint);color:var(--accent)">AFE '${ME.afe_class.slice(-2)}</span>` : "";
   showModal(`
     <div class="m-head"><h2>Your profile</h2><button class="x" onclick="closeModal()">×</button></div>
-    <div class="m-body" style="text-align:center">
-      ${avatarHTML(ME,"av-xl")}
-      <div class="nm" style="font-size:20px;font-weight:800;margin-top:8px">${esc(ME.name)} <span class="track-badge ${ME.track}" style="vertical-align:middle">${trackLabel(ME.track)}</span></div>
-      <div class="role">${esc(ME.org||"")} ${ME.org?"·":""} ${ME.city==="Remote / Virtual"?"🌐 Virtual":esc(ME.city)} · 🕒 ${tzOf(ME.city)}</div>
-      <div class="role" style="margin-top:6px">🎓 ${esc(ME.school||"—")} · <span class="avail ${ME.avail}" style="vertical-align:middle">${availText(ME.avail)}</span></div>
-      ${(ME.interests||[]).length?`<div class="chips" style="justify-content:center;margin-top:10px">${ME.interests.map(i=>`<span class="chip on">${esc(i)}</span>`).join("")}</div>`:""}
-      <p class="muted" style="font-size:12px;margin-top:12px">👀 This is what other AFEs see on your card.</p>
+    <div class="m-body">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px 0">
+        <div style="position:relative">
+          ${avatarHTML(ME,"av-xl")}
+          <span style="position:absolute;bottom:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--good);border:3px solid var(--panel)"></span>
+        </div>
+        <div style="text-align:center">
+          <div style="font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:-.3px">${esc(ME.name)}</div>
+          <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;flex-wrap:wrap">
+            <span class="track-badge ${ME.track}">${trackLabel(ME.track)}</span>
+            ${afeTag}
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0 16px">
+        <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px;text-align:center">
+          <div style="font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Location</div>
+          <div style="font-weight:700;font-size:14px">${ME.city==="Remote / Virtual"?"Virtual":esc(ME.city)}</div>
+          ${ME.building?`<div style="font-size:12px;color:var(--ink-dim);margin-top:2px">${esc(ME.building)}</div>`:""}
+        </div>
+        <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px;text-align:center">
+          <div style="font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">School</div>
+          <div style="font-weight:700;font-size:14px">${esc(ME.school||"—")}</div>
+          ${ME.org?`<div style="font-size:12px;color:var(--ink-dim);margin-top:2px">${esc(ME.org)}</div>`:""}
+        </div>
+      </div>
+      ${(ME.interests||[]).length?`<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Interests</div><div class="chips" style="justify-content:center">${ME.interests.map(i=>`<span class="chip on">${esc(i)}</span>`).join("")}</div></div>`:""}
+      <div style="text-align:center;padding:10px;border-radius:var(--radius-sm);background:var(--accent-tint);border:1px solid var(--accent);font-size:12px;color:var(--ink-dim)">This is how other AFEs see you</div>
     </div>
-    <div class="m-foot">
-      <button class="btn danger" onclick="deleteMyAccount()" style="margin-right:auto">🗑 Delete account</button>
-      ${ME.linkedin?`<button class="btn linkedin" onclick="window.open(linkedinURL(ME),'_blank','noopener')"><span class="li-ic">in</span>View my LinkedIn</button>`:""}
-      <button class="btn primary" onclick="openProfile()">✏️ Edit profile</button>
+    <div class="m-foot" style="justify-content:space-between">
+      <button class="btn danger sm" onclick="deleteMyAccount()">Delete account</button>
+      <div style="display:flex;gap:8px">
+        ${ME.linkedin?`<button class="btn sm linkedin" onclick="window.open(linkedinURL(ME),'_blank','noopener')"><span class="li-ic">in</span>LinkedIn</button>`:""}
+        <button class="btn primary" onclick="openProfile()">Edit profile</button>
+      </div>
     </div>`);
 };
 // Permanently delete your account: your messages, group memberships, and profile
@@ -919,7 +993,7 @@ window.deleteMyAccount=async function(){
     ME=null; closeModal();
     $("#app").classList.add("hidden"); $("#login").classList.remove("hidden");
     const n=$("#lg-name"), em=$("#lg-email"); if(n) n.value=""; if(em) em.value="";
-    toast("Account deleted — safe travels 🛰️");
+    toast("Account deleted — safe travels ");
   }catch(e){ console.error(e); toast("Couldn't delete your account — try again"); }
 };
 $("#btn-privacy").addEventListener("click", ()=> ME && openPrivacy());
@@ -934,14 +1008,14 @@ function profileFormHTML(heading, m, isOnboarding){
   return `
     <div class="m-head"><span class="logo" style="width:26px;height:26px"></span><h2>${heading}</h2>${isOnboarding?'':'<button class="x" onclick="closeModal()">×</button>'}</div>
     <div class="m-body">
-      ${isOnboarding?`<div class="consent-box" style="margin-bottom:18px">🔒 <div><b>You're in control.</b> Orbit only shows what you switch on, and never your exact location — just your city center. Change or hide anything anytime.</div></div>`:""}
+      ${isOnboarding?`<div class="consent-box" style="margin-bottom:18px"><div><b>You're in control.</b> Orbit only shows what you switch on, and never your exact location — just your city center. Change or hide anything anytime.</div></div>`:""}
       <div class="photo-row">
         <div class="av-xl" id="photo-prev" style="${avPrev}">${avTxt}</div>
         <div>
           <div class="lab" style="margin-bottom:2px">Profile picture</div>
           <div class="hint">Optional — stays on your device (demo).</div>
           <div class="btns">
-            <button class="btn sm" onclick="document.getElementById('photo-input').click()">📷 Upload</button>
+            <button class="btn sm" onclick="document.getElementById('photo-input').click()">Upload</button>
             <button class="btn sm ghost" onclick="clearPhoto()">Remove</button>
           </div>
           <input type="file" id="photo-input" accept="image/*" style="display:none" onchange="onPhotoPick(event)">
@@ -952,6 +1026,7 @@ function profileFormHTML(heading, m, isOnboarding){
         <label class="fld"><span class="lab">Track</span><select id="f-track"><option value="SDE" ${m?.track==='SDE'?'selected':''}>SDE — Software Development Engineer</option><option value="HDE" ${m?.track==='HDE'?'selected':''}>HDE — Hardware Development Engineer</option></select></label>
       </div>
       <div class="two-col">
+        <label class="fld"><span class="lab">AFE Class</span><select id="f-afe-class"><option value="">— Select year —</option>${[2019,2020,2021,2022,2023,2024,2025,2026].map(y=>`<option value="${y}" ${m?.afe_class===String(y)?'selected':''}>AFE ${y}</option>`).join("")}</select></label>
         <label class="fld"><span class="lab">City</span><select id="f-city" onchange="refreshBuildingOptions()">${Object.keys(CITIES).map(c=>`<option ${m?.city===c?'selected':''}>${c}</option>`).join("")}</select></label>
         <label class="fld"><span class="lab">Building</span>
           <input id="f-building" list="building-list" value="${esc(m?.building||'')}" placeholder="e.g. SEA40" autocomplete="off">
@@ -968,13 +1043,13 @@ function profileFormHTML(heading, m, isOnboarding){
       </div>
       <label class="fld"><span class="lab">Availability</span>
         <select id="f-avail">
-          <option value="coffee" ${m?.avail==='coffee'?'selected':''}>☕ Open to coffee chats</option>
-          <option value="dm" ${m?.avail==='dm'?'selected':''}>💬 Open to messages</option>
-          <option value="lunch" ${m?.avail==='lunch'?'selected':''}>🍱 Looking for a lunch group</option>
-          <option value="busy" ${m?.avail==='busy'?'selected':''}>🌙 Busy this week</option>
+          <option value="coffee" ${m?.avail==='coffee'?'selected':''}>Open to coffee chats</option>
+          <option value="dm" ${m?.avail==='dm'?'selected':''}>Open to messages</option>
+          <option value="lunch" ${m?.avail==='lunch'?'selected':''}>Looking for a lunch group</option>
+          <option value="busy" ${m?.avail==='busy'?'selected':''}> Busy this week</option>
         </select></label>
       <label class="fld"><span class="lab">First-time intern?</span>
-        <select id="f-new"><option value="yes" ${m?.newToo?'selected':''}>Yes — I'm also new to this 🌱</option><option value="no" ${m && !m.newToo?'selected':''}>No, I've interned before</option></select></label>
+        <select id="f-new"><option value="yes" ${m?.newToo?'selected':''}>Yes — I'm also new to this </option><option value="no" ${m && !m.newToo?'selected':''}>No, I've interned before</option></select></label>
       <span class="lab">Interests (tap to toggle)</span>
       <div class="chips interest-cloud" id="f-interests" style="margin-top:6px">
         ${INTERESTS.map(i=>`<span class="chip ${iv.includes(i)?'on':''}" data-i="${i}">${i}</span>`).join("")}
@@ -982,7 +1057,7 @@ function profileFormHTML(heading, m, isOnboarding){
     </div>
     <div class="m-foot">
       ${isOnboarding?'':'<button class="btn" onclick="closeModal()">Cancel</button>'}
-      <button class="btn primary" onclick="saveProfile(${isOnboarding})">${isOnboarding?'✨ Join Orbit':'Save'}</button>
+      <button class="btn primary" onclick="saveProfile(${isOnboarding})">${isOnboarding?'Join Orbit':'Save'}</button>
     </div>`;
 }
 window.onPhotoPick=function(ev){
@@ -1005,7 +1080,7 @@ window.saveProfile=async function(isOnboarding){
   if(li===null){ toast("That LinkedIn doesn't look right — paste your profile URL or just your handle"); $("#f-linkedin").focus(); return; }
   ME={
     ...ME,
-    name, track:$("#f-track").value, city:$("#f-city").value, school:$("#f-school").value,
+    name, track:$("#f-track").value, afe_class:$("#f-afe-class")?.value||'', city:$("#f-city").value, school:$("#f-school").value,
     org:$("#f-org").value, building:$("#f-building").value.trim(), email:$("#f-email").value.trim(), linkedin:li,
     avail:$("#f-avail").value, newToo:$("#f-new").value==="yes",
     interests:$$("#f-interests .chip.on").map(c=>c.dataset.i),
@@ -1013,14 +1088,17 @@ window.saveProfile=async function(isOnboarding){
     privacy: ME?.privacy || {...DEFAULT_PRIVACY}
   };
   // Persist to Supabase
-  await db.from('users').update({
+  const payload = {
     name: ME.name, track: ME.track, city: ME.city, school: ME.school, org: ME.org, building: ME.building,
     linkedin: ME.linkedin, avail: ME.avail, new_too: ME.newToo, interests: ME.interests,
     bio: ME.bio||'', photo: ME.photo, privacy: ME.privacy, email: ME.email
-  }).eq('id', ME.id);
+  };
+  if(ME.afe_class) payload.afe_class = ME.afe_class;
+  const { error: saveErr } = await db.from('users').update(payload).eq('id', ME.id);
+  if(saveErr){ console.error('Profile save error:', saveErr); toast("Save failed — check console"); return; }
   closeModal(); renderAll();
   if(map){ const c=CITIES[ME.city]; if(c) map.setView([c.lat,c.lng],6); }
-  toast(isOnboarding?`Welcome to Orbit, ${name.split(" ")[0]}! 🛰️`:"Profile saved ✓");
+  toast(isOnboarding?`Welcome to Orbit, ${name.split(" ")[0]}! `:"Profile saved ✓");
 };
 
 function openPrivacy(){
@@ -1032,7 +1110,7 @@ function openPrivacy(){
     ["linkedin","Show my LinkedIn",""],["email","Allow direct messages","Let other AFEs start a 1:1 chat with you"],
   ];
   showModal(`
-    <div class="m-head"><h2>🔒 Privacy & consent</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="m-head"><h2>Privacy & consent</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="m-body">
       <div class="consent-box" style="margin-bottom:16px">🛡️ <div><b>Safety layer:</b> No one sees you on the map or can contact you unless you opt in. Exact location is never shown — only your city. Turn anything off and it disappears for everyone instantly.</div></div>
       ${rows.map(([k,l,s])=>`<div class="privacy-row"><div class="pl">${l}${s?`<small>${s}</small>`:""}</div><button class="switch ${P[k]?'on':''}" data-priv="${k}"></button></div>`).join("")}
@@ -1240,7 +1318,7 @@ function initMap(){
   // world as you pan (like Google/Apple Maps) instead of scrolling into endless
   // empty repeats. minZoom:2 stops the map zooming out so far you see many copies
   // stacked side by side at once.
-  map=L.map("map",{ zoomControl:true, attributionControl:false, worldCopyJump:true, minZoom:2 }).setView([44,-100],4);
+  map=L.map("map",{ zoomControl:true, attributionControl:false, worldCopyJump:true, minZoom:3, maxBoundsViscosity:1.0 }).setView([39,-98],4);
   map.zoomControl.setPosition("topright");
   setMapTiles(currentTheme());
   markerLayer=L.layerGroup().addTo(map);
@@ -1291,8 +1369,8 @@ function showLocation(lat,lng,accuracy,{announce=true}={}){
 function fetchAndCacheLocation(){
   const btn=$("#btn-locate");
   if(!navigator.geolocation){ toast("Geolocation isn't supported in this browser"); return; }
-  if(btn){ btn.classList.add("locating"); btn.textContent="📍 Locating…"; }
-  const done=()=>{ if(btn){ btn.classList.remove("locating"); btn.textContent="📍 Locate me"; } };
+  if(btn){ btn.classList.add("locating"); btn.textContent="Locating…"; }
+  const done=()=>{ if(btn){ btn.classList.remove("locating"); btn.textContent="Locate me"; } };
   navigator.geolocation.getCurrentPosition(
     pos=>{ const { latitude:lat, longitude:lng, accuracy }=pos.coords;
       saveCachedLocation({ lat, lng, accuracy, ts:Date.now() });
@@ -1330,7 +1408,7 @@ function wireMapTools(){
     const q=inp.value.trim().toLowerCase();
     matches=cities.filter(c=>c.toLowerCase().includes(q));
     if(!q || !matches.length){ box.innerHTML = q?`<div class="opt none">No matching city</div>`:""; box.classList.toggle("open", !!q); return; }
-    box.innerHTML=matches.map((c,i)=>`<div class="opt${i===active?' active':''}" data-city="${esc(c)}"><span>${c==="Remote / Virtual"?"🌐 Remote / Virtual":esc(c)}</span><span class="cnt">${countInCity(c)}</span></div>`).join("");
+    box.innerHTML=matches.map((c,i)=>`<div class="opt${i===active?' active':''}" data-city="${esc(c)}"><span>${c==="Remote / Virtual"?"Remote / Virtual":esc(c)}</span><span class="cnt">${countInCity(c)}</span></div>`).join("");
     box.classList.add("open");
   };
   const choose=(city)=>{ inp.value=city==="Remote / Virtual"?"Remote / Virtual":city; box.classList.remove("open"); active=-1; flyToCity(city); };
@@ -1399,8 +1477,38 @@ async function handleAuthSession(session){
   await enterApp();
 }
 
+async function loadAllConversations(){
+  if(!ME) return;
+  _loadingHistory = true;
+  const myGroupKeys = GROUPS.filter(g=>g.members.includes(ME.id)).map(g=>"grp:"+g.id);
+  const orFilter = [`from_id.eq.${ME.id}`, `convo_key.like.%${ME.id}%`];
+  if(myGroupKeys.length) orFilter.push(...myGroupKeys.map(k=>`convo_key.eq.${k}`));
+  const { data, error } = await db.from('messages').select('*').or(orFilter.join(',')).order('ts',{ascending:true}).limit(5000);
+  if(error){ console.error('loadAllConversations error:', error); _loadingHistory=false; return; }
+  const grouped = {};
+  for(const m of (data||[])){ if(!grouped[m.convo_key]) grouped[m.convo_key]=[]; grouped[m.convo_key].push(m); }
+  for(const [convoKey, msgs] of Object.entries(grouped)){
+    if(convoKey.startsWith('dm:')){
+      const parts=convoKey.slice(3).split(':');
+      if(!parts.includes(ME.id)) continue;
+      const peerId=parts.find(id=>id!==ME.id); if(!peerId) continue;
+      ensureDM(peerId);
+      const c=CONVOS[dmKey(peerId)];
+      for(const m of msgs.slice(-200)) pushMessage(c.key, m.from_id, m.text, m.ts);
+    } else if(convoKey.startsWith('grp:')){
+      const groupId=convoKey.slice(4);
+      ensureGroup(groupId);
+      const c=CONVOS[grpKey(groupId)];
+      for(const m of msgs.slice(-200)) pushMessage(c.key, m.from_id, m.text, m.ts);
+    }
+  }
+  _loadingHistory = false;
+  refreshMessagingUI();
+}
+
 async function enterApp(){
-  const isNew = !ME.school && !ME.org;
+  const onboarded = localStorage.getItem("orbit-onboarded-"+ME.id);
+  const isFirstTime = !onboarded && !ME.school && !ME.org;
 
   // Load all users
   const { data: users } = await db.from('users').select('*');
@@ -1410,7 +1518,7 @@ async function enterApp(){
   const { data: groups } = await db.from('groups').select('*, group_members(user_id)');
   GROUPS = (groups||[]).map(g => ({
     id: g.id, emoji: g.emoji, title: g.title, desc: g.description, city: g.city,
-    members: (g.group_members||[]).map(m => m.user_id)
+    private: g.private||false, members: (g.group_members||[]).map(m => m.user_id)
   }));
 
   $("#login").classList.add("hidden");
@@ -1419,6 +1527,9 @@ async function enterApp(){
   buildFilterChips();
   renderAll();
   PHOTO_DRAFT=null;
+
+  // Load existing conversations so inbox is populated on refresh
+  await loadAllConversations();
 
   // Subscribe to real-time messages
   subscribeToMessages();
@@ -1445,8 +1556,9 @@ async function enterApp(){
     })
     .subscribe();
 
-  if(isNew){
-    showModal(profileFormHTML("Welcome to Orbit 🛰️", ME, true));
+  if(isFirstTime){
+    localStorage.setItem("orbit-onboarded-"+ME.id, "1");
+    showModal(profileFormHTML("Welcome to Orbit", ME, true));
   }
 }
 
@@ -1465,7 +1577,7 @@ function currentTheme(){
 function applyTheme(theme){
   document.documentElement.setAttribute("data-theme", theme);
   const btn=$("#btn-theme");
-  if(btn){ btn.textContent = theme==="light" ? "☀️" : "🌙"; btn.title = `Switch to ${theme==="light"?"dark":"light"} mode`; }
+  if(btn){ btn.textContent = theme==="light" ? "☀️" : ""; btn.title = `Switch to ${theme==="light"?"dark":"light"} mode`; }
   setMapTiles(theme); // swap Leaflet basemap to match
   updateGlobeTheme();
 }

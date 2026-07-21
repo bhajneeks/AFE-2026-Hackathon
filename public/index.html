@@ -14,10 +14,10 @@
 <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/globe.gl@2.30.0/dist/globe.gl.min.js"></script>
 
-<!-- Fonts: Outfit (display) + Plus Jakarta Sans (body) -->
+<!-- Fonts: DM Sans (body) + DM Serif Display (headings — thin editorial) -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=DM+Serif+Display&display=swap" />
 
 <link rel="stylesheet" href="styles.css?v=20260720b" />
 </head>
@@ -41,7 +41,7 @@
       <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
       Sign in with Google
     </button>
-    <div class="fine">🔒 Sign in with your Google account. We only use your name and email to set up your Orbit profile.</div>
+    <div class="fine">Sign in with your Google account. We only use your name and email to set up your Orbit profile.</div>
   </div>
 </div>
 
@@ -51,15 +51,15 @@
     <div class="brand"><span class="logo"></span>Orbit <small>find your people</small></div>
     <div class="spacer"></div>
     <nav class="tabs" id="tabs">
-      <button data-view="map" class="active">🗺️ <span>Map</span></button>
-      <button data-view="list">👥 <span>People</span></button>
-      <button data-view="speed">⚡ <span>Pair&nbsp;Up</span></button>
-      <button data-view="groups">☕ <span>Brown&nbsp;bags</span></button>
-      <button data-view="messages" id="tab-messages">💬 <span>Messages</span></button>
+      <button data-view="map" class="active"><span>Map</span></button>
+      <button data-view="list"><span>People</span></button>
+      <button data-view="speed"><span>Pair&nbsp;Up</span></button>
+      <button data-view="groups"><span>Groups</span></button>
+      <button data-view="messages" id="tab-messages"><span>Messages</span></button>
     </nav>
     <div class="spacer"></div>
-    <button class="theme-toggle" id="btn-theme" title="Toggle light / dark mode" aria-label="Toggle light or dark mode">🌙</button>
-    <button class="btn ghost sm" id="btn-privacy">🔒 <span>Privacy</span></button>
+    <button class="theme-toggle" id="btn-theme" title="Toggle light / dark mode" aria-label="Toggle light or dark mode"></button>
+    <button class="btn ghost sm" id="btn-privacy"><span>Privacy</span></button>
     <div class="me-chip" id="me-chip" title="Edit your profile"></div>
   </header>
 
@@ -77,33 +77,33 @@
       </div>
 
       <details class="filter-group" id="grp-quick" open>
-        <summary>⚡ Quick filters <span class="fg-count" data-count-for="quick"></span></summary>
+        <summary>Quick filters <span class="fg-count" data-count-for="quick"></span></summary>
         <div class="fg-body">
           <div class="chips" id="quick-filters">
-            <span class="chip accent" data-f="nearby">📍 Nearby me</span>
-            <span class="chip" data-f="sameCity">🏙️ Same city</span>
-            <span class="chip" data-f="sameBuilding">🏢 Same building</span>
-            <span class="chip" data-f="sameSchool">🎓 Same school</span>
-            <span class="chip" data-f="sameTz">🕒 Same timezone</span>
-            <span class="chip" data-f="newToo">🌱 Also new to this</span>
-            <span class="chip" data-f="coffee">☕ Open to coffee</span>
+            <span class="chip accent" data-f="nearby">Nearby me</span>
+            <span class="chip" data-f="sameCity">Same city</span>
+            <span class="chip" data-f="sameBuilding">Same building</span>
+            <span class="chip" data-f="sameSchool">Same school</span>
+            <span class="chip" data-f="sameTz">Same timezone</span>
+            <span class="chip" data-f="newToo">Also new</span>
+            <span class="chip" data-f="coffee">Open to coffee</span>
           </div>
         </div>
       </details>
 
       <details class="filter-group" id="grp-track" open>
-        <summary>🧭 Track <span class="fg-count" data-count-for="track"></span></summary>
+        <summary>Track <span class="fg-count" data-count-for="track"></span></summary>
         <div class="fg-body">
           <div class="chips" id="track-filters">
-            <span class="chip" data-track="SDE" title="Software Development Engineer">💻 SDE</span>
-            <span class="chip" data-track="HDE" title="Hardware Development Engineer">🖥️ HDE</span>
-            <span class="chip" data-track="alumni">🌟 Alumni mentors</span>
+            <span class="chip" data-track="SDE" title="Software Development Engineer">SDE</span>
+            <span class="chip" data-track="HDE" title="Hardware Development Engineer">HDE</span>
+            <span class="chip" data-track="alumni">Alumni</span>
           </div>
         </div>
       </details>
 
       <details class="filter-group" id="grp-city">
-        <summary>🏙️ City <span class="fg-count" data-count-for="city"></span></summary>
+        <summary>City <span class="fg-count" data-count-for="city"></span></summary>
         <div class="fg-body">
           <input class="fg-search" id="city-search" placeholder="Filter cities…" autocomplete="off">
           <div class="chips" id="city-filters"></div>
@@ -111,7 +111,7 @@
       </details>
 
       <details class="filter-group" id="grp-building">
-        <summary>🏢 Building <span class="fg-count" data-count-for="building"></span></summary>
+        <summary>Building <span class="fg-count" data-count-for="building"></span></summary>
         <div class="fg-body">
           <input class="fg-search" id="building-search" placeholder="Filter buildings…" autocomplete="off">
           <div class="chips" id="building-filters"></div>
@@ -119,7 +119,7 @@
       </details>
 
       <details class="filter-group" id="grp-interest">
-        <summary>✨ Interests <span class="fg-count" data-count-for="interest"></span></summary>
+        <summary>Interests <span class="fg-count" data-count-for="interest"></span></summary>
         <div class="fg-body">
           <input class="fg-search" id="interest-search" placeholder="Filter interests…" autocomplete="off">
           <div class="chips interest-cloud" id="interest-filters"></div>
@@ -139,12 +139,14 @@
             <input id="map-city-search" placeholder="Jump to a city…" autocomplete="off" aria-label="Search for a city on the map">
             <div class="map-suggest" id="map-suggest"></div>
           </div>
-          <div class="locate-wrap">
-            <button class="btn map-locate" id="btn-locate" title="Jump to your saved location (Shift-click to refresh it)">📍 Locate me</button>
-            <button class="locate-refresh" id="btn-locate-refresh" title="Update my saved location" aria-label="Update my saved location">⟳</button>
+          <div class="map-btns">
+            <div class="locate-wrap">
+              <button class="btn map-locate" id="btn-locate" title="Jump to your saved location (Shift-click to refresh it)">Locate me</button>
+              <button class="locate-refresh" id="btn-locate-refresh" title="Update my saved location" aria-label="Update my saved location">⟳</button>
+            </div>
+            <button class="btn map-heat on" id="btn-heat" title="Toggle the AFE density heatmap" aria-pressed="true">Heatmap</button>
+            <button class="btn map-globe" id="btn-globe" title="Switch to 3D globe view" aria-pressed="false">Globe</button>
           </div>
-          <button class="btn map-heat on" id="btn-heat" title="Toggle the AFE density heatmap" aria-pressed="true">🔥 Heatmap</button>
-          <button class="btn map-globe" id="btn-globe" title="Switch to 3D globe view" aria-pressed="false">🌍 Globe</button>
         </div>
         <div class="count-bar" id="count-bar-map"></div>
         <div class="map-legend">
@@ -175,7 +177,7 @@
               <h2>Brown bags & group chats</h2>
               <p class="muted">Low-pressure ways to show up with a few people instead of one-on-one.</p>
             </div>
-            <button class="btn primary" id="new-group">➕ New brown bag</button>
+            <button class="btn primary" id="new-group">+ New group</button>
           </div>
           <div class="grid" id="groups" style="margin-top:18px"></div>
         </div>
