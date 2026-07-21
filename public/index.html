@@ -130,6 +130,14 @@
     <section class="content">
       <div class="view active" id="view-map">
         <div id="map"></div>
+        <div class="map-toolbar">
+          <div class="map-search">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+            <input id="map-city-search" placeholder="Jump to a city…" autocomplete="off" aria-label="Search for a city on the map">
+            <div class="map-suggest" id="map-suggest"></div>
+          </div>
+          <button class="btn map-locate" id="btn-locate" title="Find my location">📍 Locate me</button>
+        </div>
         <div class="count-bar" id="count-bar-map"></div>
         <div class="map-legend">
           <b>Approximate locations only</b><br>

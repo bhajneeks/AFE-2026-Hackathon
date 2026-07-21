@@ -1005,6 +1005,79 @@ function initMap(){
   setMapTiles(currentTheme());
   markerLayer=L.layerGroup().addTo(map);
   renderMap();
+  wireMapTools();
+}
+
+/* ---------- Map tools: "Locate me" + city jump search ---------- */
+let locateMarker=null, locateCircle=null;
+function countInCity(city){ return PEOPLE.filter(p=>p.city===city).length; }
+
+function flyToCity(city){
+  const c=CITIES[city]; if(!c||!map) return;
+  map.flyTo([c.lat,c.lng], city==="Remote / Virtual"?4:9, { duration:.9 });
+  toast(`${city} · ${countInCity(city)} ${countInCity(city)===1?"AFE":"AFEs"} here`);
+}
+
+// Browser geolocation → drop a transient "you are here" marker and fly to it.
+// This is NOT saved to the profile (Orbit never stores exact location).
+function locateMe(){
+  const btn=$("#btn-locate");
+  if(!navigator.geolocation){ toast("Geolocation isn't supported in this browser"); return; }
+  if(btn){ btn.classList.add("locating"); btn.textContent="📍 Locating…"; }
+  const done=()=>{ if(btn){ btn.classList.remove("locating"); btn.textContent="📍 Locate me"; } };
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      const { latitude:lat, longitude:lng, accuracy }=pos.coords;
+      if(map){
+        if(locateMarker) markerLayer.removeLayer(locateMarker);
+        if(locateCircle) markerLayer.removeLayer(locateCircle);
+        locateCircle=L.circle([lat,lng], { radius:Math.max(accuracy||500,300), color:"#46d6a4", weight:1, fillColor:"#46d6a4", fillOpacity:.12 }).addTo(markerLayer);
+        locateMarker=L.marker([lat,lng], { icon:L.divIcon({ className:"", iconSize:[22,22], iconAnchor:[11,11],
+          html:`<div style="width:16px;height:16px;border-radius:50%;background:#46d6a4;border:3px solid #fff;box-shadow:0 0 0 3px rgba(70,214,164,.4),0 2px 6px rgba(0,0,0,.4)"></div>` }) })
+          .addTo(markerLayer).bindPopup("<b>You are here</b><br><span style='color:#777;font-size:12px'>Not saved — shown only to you.</span>");
+        map.flyTo([lat,lng], 11, { duration:1 });
+        locateMarker.openPopup();
+      }
+      // Nearest known hub, for a helpful nudge.
+      let best=null, bestD=Infinity;
+      for(const [name,c] of Object.entries(CITIES)){ if(name==="Remote / Virtual") continue;
+        const d=(c.lat-lat)**2+(c.lng-lng)**2; if(d<bestD){ bestD=d; best=name; } }
+      if(best) toast(`Found you · nearest hub: ${best} (${countInCity(best)} AFEs)`);
+      done();
+    },
+    err=>{
+      done();
+      toast(err.code===1 ? "Location permission denied" : "Couldn't get your location");
+    },
+    { enableHighAccuracy:true, timeout:10000, maximumAge:60000 }
+  );
+}
+
+function wireMapTools(){
+  const btn=$("#btn-locate"); if(btn && !btn._wired){ btn._wired=true; btn.addEventListener("click", locateMe); }
+  const inp=$("#map-city-search"), box=$("#map-suggest");
+  if(!inp || inp._wired) return; inp._wired=true;
+  const cities=Object.keys(CITIES);
+  let active=-1, matches=[];
+  const render=()=>{
+    const q=inp.value.trim().toLowerCase();
+    matches=cities.filter(c=>c.toLowerCase().includes(q));
+    if(!q || !matches.length){ box.innerHTML = q?`<div class="opt none">No matching city</div>`:""; box.classList.toggle("open", !!q); return; }
+    box.innerHTML=matches.map((c,i)=>`<div class="opt${i===active?' active':''}" data-city="${esc(c)}"><span>${c==="Remote / Virtual"?"🌐 Remote / Virtual":esc(c)}</span><span class="cnt">${countInCity(c)}</span></div>`).join("");
+    box.classList.add("open");
+  };
+  const choose=(city)=>{ inp.value=city==="Remote / Virtual"?"Remote / Virtual":city; box.classList.remove("open"); active=-1; flyToCity(city); };
+  inp.addEventListener("input", ()=>{ active=-1; render(); });
+  inp.addEventListener("focus", ()=>{ if(inp.value.trim()) render(); });
+  inp.addEventListener("keydown", e=>{
+    if(!box.classList.contains("open")) return;
+    if(e.key==="ArrowDown"){ e.preventDefault(); active=Math.min(matches.length-1, active+1); render(); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); active=Math.max(0, active-1); render(); }
+    else if(e.key==="Enter"){ e.preventDefault(); if(matches[active]) choose(matches[active]); else if(matches.length) choose(matches[0]); }
+    else if(e.key==="Escape"){ box.classList.remove("open"); }
+  });
+  box.addEventListener("click", e=>{ const o=e.target.closest(".opt[data-city]"); if(o) choose(o.dataset.city); });
+  document.addEventListener("click", e=>{ if(!e.target.closest(".map-search")) box.classList.remove("open"); });
 }
 // --- Google OAuth login ---
 async function signInWithGoogle(){
@@ -1142,7 +1215,7 @@ if(window.matchMedia){
 
 async function boot(){
   buildFilterChips();
-  wireFilters(); wireTabs(); wireSidebarResize();
+  wireFilters(); wireTabs(); wireSidebarResize(); wireMapTools();
 
   // Clean up URL hash left by Supabase auth redirect
   if(window.location.hash && window.location.hash.includes('access_token')){
