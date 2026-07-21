@@ -557,7 +557,13 @@ function renderHeat(list){
       add(j.lat+dy, j.lng+dx, 0.6);
     }
   }
-  if(ME && ME.privacy.onMap){ const jm=jitter(ME.city, ME.id+"me"); if(jm){ add(jm.lat,jm.lng,1.0); for(let k=0;k<5;k++){ add(jm.lat+(Math.sin(k)*0.03), jm.lng+(Math.cos(k)*0.03), 0.6); } } }
+  if(ME && ME.privacy.onMap){
+    const cached=getCachedLocation();
+    let ml,mg;
+    if(cached){ ml=cached.lat; mg=cached.lng; }
+    else { const jm=jitter(ME.city, ME.id+"me"); if(jm){ ml=jm.lat; mg=jm.lng; } }
+    if(ml!=null){ add(ml,mg,1.0); for(let k=0;k<5;k++){ add(ml+(Math.sin(k)*0.03), mg+(Math.cos(k)*0.03), 0.6); } }
+  }
   heatLayer=L.heatLayer(pts, {
     radius:48, blur:38, minOpacity:0.45, max:3.5, maxZoom:12,
     // Bold Strava/Snapchat warm ramp: transparent → blue → teal → gold → orange → hot red core
