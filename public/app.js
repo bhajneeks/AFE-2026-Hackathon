@@ -573,8 +573,11 @@ function renderMap(){
   renderHeat(list);
   updateOnlineCount();
   if(ME && ME.privacy.onMap){
-    const j=jitter(ME.city, ME.id+"me");
-    if(j) L.marker([j.lat,j.lng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${esc(ME.city)}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile →</a>`);
+    const cached = getCachedLocation();
+    let myLat, myLng;
+    if(cached){ myLat=cached.lat; myLng=cached.lng; }
+    else { const j=jitter(ME.city, ME.id+"me"); if(j){ myLat=j.lat; myLng=j.lng; } }
+    if(myLat!=null) L.marker([myLat,myLng], {icon:facePin(ME, "#46d6a4", true)}).addTo(markerLayer).bindPopup(`<b>You</b><br>${esc(ME.city)}<br><a href="#" onclick="viewMyProfile();return false" style="font-weight:700">View my profile</a>`);
   }
   for(const p of list){
     const j=jitter(p.city, p.id); if(!j) continue;
@@ -1487,7 +1490,6 @@ function initMap(){
   setMapTiles(currentTheme());
   markerLayer=L.layerGroup().addTo(map);
   renderMap();
-  restoreSavedPin();
   wireMapTools();
 }
 
