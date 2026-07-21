@@ -2125,7 +2125,7 @@ async function enterApp(){
         return;
       }
       const user = { ...payload.new, newToo: payload.new.new_too, interests: payload.new.interests||[], topics: (payload.new.topics&&payload.new.topics.length)?payload.new.topics:undefined };
-      if(user.id === ME.id){ ME = { ...user, privacy: user.privacy||ME.privacy||{...DEFAULT_PRIVACY} }; updateMeChip(); return; }
+      if(user.id === ME.id){ ME = { ...user, photo: user.photo||ME.photo, privacy: user.privacy||ME.privacy||{...DEFAULT_PRIVACY} }; updateMeChip(); renderMap(); return; }
       const idx = PEOPLE.findIndex(p => p.id === user.id);
       if(idx >= 0) PEOPLE[idx] = user; else PEOPLE.push(user);
       renderCards(); renderMap();
