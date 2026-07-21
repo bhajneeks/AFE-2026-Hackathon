@@ -2157,6 +2157,17 @@ if(window.matchMedia){
 function showLanding(){
   $("#landing").classList.remove("hidden");
   $("#app").classList.add("hidden");
+  // Scroll to top and trigger reveal animations
+  $("#landing").scrollTop = 0;
+  initLandingReveal();
+}
+function initLandingReveal(){
+  const els = document.querySelectorAll(".landing-reveal");
+  if(!els.length) return;
+  const obs = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add("visible"); obs.unobserve(e.target); } });
+  }, { threshold:0.15, root:document.getElementById("landing") });
+  els.forEach(el=>{ el.classList.remove("visible"); obs.observe(el); });
 }
 function hideLanding(){
   $("#landing").classList.add("hidden");
@@ -2172,7 +2183,13 @@ document.addEventListener("click", e=>{
   }
   // Landing page "Back to app" and "Get started" buttons
   if(e.target.closest("#landing-back") || e.target.closest("#landing-start") || e.target.closest("#landing-start-2")){
-    hideLanding();
+    $("#landing").classList.add("hidden");
+    if(ME){
+      $("#app").classList.remove("hidden");
+      if(map) setTimeout(()=>map.invalidateSize(),60);
+    } else {
+      $("#login").classList.remove("hidden");
+    }
   }
 });
 
