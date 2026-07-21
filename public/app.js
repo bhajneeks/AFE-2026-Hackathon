@@ -1709,6 +1709,22 @@ function startOnboarding(){
   const trackSel = $("#ob-track-sel");
   if(trackSel) trackSel.value = ME.track || "SDE";
 
+  // Populate live users from DB (show their actual Orbit photos)
+  (async()=>{
+    const { data: liveUsers } = await db.from('users').select('name,photo,track,city').limit(6);
+    const container = $("#ob-live-users");
+    if(container && liveUsers && liveUsers.length){
+      container.innerHTML = liveUsers.slice(0,3).map((u,i)=>{
+        const hasPhoto = u.photo && u.photo.startsWith("data:");
+        const avatarInner = hasPhoto
+          ? `<div class="ob-mc-avatar" style="background-image:url('${u.photo}');background-size:cover;background-position:center"></div>`
+          : `<div class="ob-mc-avatar" style="background:linear-gradient(135deg,${i===0?'#ff9900,#e68a00':i===1?'#08aae3,#0690c0':'#cea968,#a88542'})">${(u.name||"?")[0]}</div>`;
+        const city = (u.city||"").split(",")[0] || "Amazon";
+        return `<div class="ob-mini-card ob-mc-${i+1}">${avatarInner}<div class="ob-mc-info"><strong>${esc(u.name.split(" ")[0])}</strong><span>${u.track||"SDE"} · ${city}</span></div></div>`;
+      }).join("");
+    }
+  })();
+
   // Build interest chips
   const intWrap = $("#ob-interests");
   intWrap.innerHTML = INTERESTS.map(i=>`<span class="chip" data-i="${i}">${i}</span>`).join("");
