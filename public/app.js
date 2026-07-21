@@ -1473,7 +1473,7 @@ function initMap(){
 }
 
 /* ---------- Map tools: "Locate me" + city jump search + pin-drop ---------- */
-let locateMarker=null, locateCircle=null;
+let locateMarker=null, locateCircle=null, pinLayer=null;
 let pinDropMode = false;
 function countInCity(city){ return PEOPLE.filter(p=>p.city===city).length; }
 
@@ -1498,15 +1498,15 @@ function nearestHub(lat,lng){
     const d=(c.lat-lat)**2+(c.lng-lng)**2; if(d<bestD){ bestD=d; best=name; } }
   return best;
 }
-// Drop the "you are here" marker + fly there (used by both cached and fresh paths).
+// Drop the "you are here" marker + fly there. Uses its own layer so renderMap can't wipe it.
 function showLocation(lat,lng,accuracy,{announce=true}={}){
   if(!map) return;
-  if(locateMarker) markerLayer.removeLayer(locateMarker);
-  if(locateCircle) markerLayer.removeLayer(locateCircle);
-  locateCircle=L.circle([lat,lng], { radius:Math.max(accuracy||500,300), color:"#46d6a4", weight:1, fillColor:"#46d6a4", fillOpacity:.12 }).addTo(markerLayer);
+  if(!pinLayer){ pinLayer=L.layerGroup().addTo(map); }
+  pinLayer.clearLayers();
+  locateCircle=L.circle([lat,lng], { radius:Math.max(accuracy||500,300), color:"#46d6a4", weight:1, fillColor:"#46d6a4", fillOpacity:.12 }).addTo(pinLayer);
   locateMarker=L.marker([lat,lng], { icon:L.divIcon({ className:"", iconSize:[22,22], iconAnchor:[11,11],
     html:`<div style="width:16px;height:16px;border-radius:50%;background:#46d6a4;border:3px solid #fff;box-shadow:0 0 0 3px rgba(70,214,164,.4),0 2px 6px rgba(0,0,0,.4)"></div>` }) })
-    .addTo(markerLayer).bindPopup("<b>You are here</b><br><span style='color:#777;font-size:12px'>Saved on this device only.</span>");
+    .addTo(pinLayer).bindPopup("<b>Your pin</b><br><span style='color:#777;font-size:12px'>Saved on this device.</span>");
   map.flyTo([lat,lng], 11, { duration:.9 });
   locateMarker.openPopup();
   if(announce){ const hub=nearestHub(lat,lng); if(hub) toast(`Your location · nearest hub: ${hub} (${countInCity(hub)} AFEs)`); }
