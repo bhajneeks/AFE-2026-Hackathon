@@ -2151,6 +2151,31 @@ if(window.matchMedia){
   });
 }
 
+/* ============================================================================
+   LANDING PAGE — brand click shows marketing page, buttons return to app
+   ========================================================================== */
+function showLanding(){
+  $("#landing").classList.remove("hidden");
+  $("#app").classList.add("hidden");
+}
+function hideLanding(){
+  $("#landing").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+  if(map) setTimeout(()=>map.invalidateSize(),60);
+}
+document.addEventListener("click", e=>{
+  // Brand logo click opens landing page (only when app is visible)
+  if(e.target.closest(".topbar .brand")){
+    e.preventDefault();
+    showLanding();
+    return;
+  }
+  // Landing page "Back to app" and "Get started" buttons
+  if(e.target.closest("#landing-back") || e.target.closest("#landing-start") || e.target.closest("#landing-start-2")){
+    hideLanding();
+  }
+});
+
 async function boot(){
   buildFilterChips();
   wireFilters(); wireTabs(); wireSidebarResize(); wireMapTools();
